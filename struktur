@@ -1,0 +1,44 @@
+firmware timbangan-online/
+├── platformio.ini                        // Konfigurasi project PlatformIO
+├── include/
+│   └── config.h                          // Konfigurasi global (WiFi, Firebase, dsb)
+├── src/
+│   ├── main.cpp                          // Program utama (setup & loop)
+│   └── setting/
+│       └── pinManager.h                  // Definisi pin-pin hardware
+├── lib/
+│   ├── FirebaseClient/                   // Library custom untuk Firebase
+│   │   ├── FirebaseClient.h              // Header Firebase
+│   │   └── FirebaseClient.cpp            // Implementasi Firebase
+│   ├── Indicator/                        // Library indikator LED/buzzer
+│   │   ├── Indicator.h                   // Header indikator
+│   │   └── Indicator.cpp                 // Implementasi indikator
+│   ├── LocalStorage/                     // Library penyimpanan lokal (EEPROM/Flash)
+│   │   ├── LocalStorage.h                // Header penyimpanan lokal
+│   │   └── LocalStorage.cpp              // Implementasi penyimpanan lokal
+│   ├── NetworkManager/                   // Library manajemen WiFi
+│   │   ├── NetworkManager.h              // Header WiFi
+│   │   └── NetworkManager.cpp            // Implementasi WiFi
+│   ├── RFIDReader/                       // Library pembaca RFID
+│   │   ├── RFIDReader.h                  // Header RFID
+│   │   └── RFIDReader.cpp                // Implementasi RFID
+│   ├── SensorReader/                     // Library pembaca sensor timbangan (HX711)
+│   │   ├── SensorReader.h                // Header sensor timbangan
+│   │   └── SensorReader.cpp              // Implementasi sensor timbangan
+│   ├── TimeSync/                         // Library sinkronisasi waktu (NTP)
+│   │   ├── TimeSync.h                    // Header sinkronisasi waktu
+│   │   └── TimeSync.cpp                  // Implementasi sinkronisasi waktu
+│   └── ui/                               // Library tampilan LCD
+│       ├── lcd_display.h                 // Header fungsi LCD
+│       └── lcd_display.cpp               // Implementasi fungsi LCD
+├── .pio/
+│   └── build/                            // Folder build otomatis (abaikan)
+├── dashboard/                            // Web Dashboard (Firebase Hosting)
+│   ├── index.html                        // Tampilan utama dashboard
+│   ├── app.js                            // Logika dashboard (JavaScript)
+│   ├── style.css                         // Style dashboard (CSS)
+│   └── firebase.json                     // Konfigurasi hosting Firebase
+├── functions/                            // Firebase Cloud Functions (backend)
+│   ├── package.json                      // Dependensi Node.js untuk functions
+│   └── index.js                          // Kode utama cloud function
+└── README.md                             // Panduan
