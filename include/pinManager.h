@@ -40,6 +40,13 @@
 #define EEPROM_SIZE 512
 #define EEPROM_ADDR_KALIBRASI 0      // Alamat untuk faktor kalibrasi
 #define EEPROM_ADDR_UID       32     // Alamat mulai untuk UID RFID
+
+// NEW: Web Server & Base Configuration EEPROM Addresses
+// Note: These are defined in config.h to avoid conflicts
+// #define EEPROM_ADDR_BASE_MODE   100  // Alamat untuk base mode (1 byte)
+// #define EEPROM_ADDR_BASE_WEIGHT 104  // Alamat untuk base weight (4 bytes float)
+#define EEPROM_ADDR_WEB_CONFIG  108  // Alamat untuk web configuration
+
 #define MAX_USERS 10             // Maksimal user RFID
 #define WEIGHT_SAMPLES 10         // Jumlah sample pembacaan berat
 #define WEIGHT_STABILIZE_DELAY 200 // Delay stabilitas berat (ms)

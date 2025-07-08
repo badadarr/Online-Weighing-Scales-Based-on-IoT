@@ -7,5 +7,6 @@
 extern FirebaseData fbdo;
 
 void setupFirebase();
-void sendBeratKeFirebase(const String& berat); // Kirim berat ke Firebase
+void sendBeratKeFirebase(const String& berat);
+void cleanupOldData(); // Kirim berat ke Firebase
 

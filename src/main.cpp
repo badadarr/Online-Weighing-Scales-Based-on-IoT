@@ -14,10 +14,15 @@
 #include "LocalStorage.h" // Local storage untuk menyimpan data secara lokal
 #include "lcd_display.h" // LCD display untuk menampilkan informasi
 #include "pinManager.h" // Pin manager untuk mengatur pin GPIO
+#include "WebServer.h" // NEW: Web server untuk konfigurasi via website
+
 // File: src/main.cpp
 unsigned long lastUpdate = 0;
 String lastUID = "";
 bool sendingActive = false; // Status pengiriman data
+
+// NEW: Function declarations
+bool isWeightStable(float weight);
 
 void setup() {
   Serial.begin(115200);
@@ -42,26 +47,192 @@ void setup() {
   setupSensor();//Inisialisasi sensor
   setupFirebase();//Inisialisasi server / firebase
   
+  // NEW: Initialize web server for configuration
+  lcdShowStatus("Init Web Server...");
+  webServer.init();
+  webServer.begin();
+  webServer.setSystemReady(true);
+  Serial.print("[WEB] Web server started at: http://");
+  Serial.println(webServer.getWebServerIP());
+  
   lcdShowStatus("Siap digunakan...");  
   ulangiBuzzer();
   lcdClear();
 
 }
 void loop() {
-
-  String berat = readWeight(); // Baca berat dari sensor load cell
-  Serial.println("[HX711] Berat: " + berat + " kg");
-  lcdShowBerat(berat); // Tampilkan berat di LCD
-  if (berat.toFloat() > 0) { // Jika berat valid
-    sendBeratKeFirebase(berat); // Kirim berat ke Firebase
-    //delay(10);
-  }else{
-    setColor(0, 0, 0); // Merah jika berat tidak valid
-    buzz(100); // Bunyi buzzer sebagai tanda berat tidak valid
-    lcdShowFirebase("Stand by...");
-    return; // Keluar dari loop jika berat tidak valid
+  // Add delay to prevent excessive loop frequency (configurable)
+  static unsigned long lastLoop = 0;
+  unsigned long currentTime = millis();
+  
+  // Limit loop frequency based on performance mode
+  if (currentTime - lastLoop < LOOP_DELAY_MS) {
+    delay(10); // Small delay to prevent CPU overload
+    return;
   }
-  updateTareButton(); // Perbarui tombol tare
+  lastLoop = currentTime;
+  
+  // Handle web server requests
+  webServer.handleClient();
+
+  // Get advanced weight data from sensor (with configurable frequency)
+  static unsigned long lastWeightRead = 0;
+  WeightData weightData;
+  
+  // Read weight data based on performance mode interval
+  if (currentTime - lastWeightRead >= WEIGHT_READ_INTERVAL_MS) {
+    weightData = getAdvancedWeightData();
+    lastWeightRead = currentTime;
+  } else {
+    // Use cached weight data
+    weightData = webServer.getLastWeightData();
+  }
+  
+  // Apply base correction based on web configuration
+  float finalWeight = weightData.stable;
+  if (webServer.getBaseMode() && finalWeight > 0) {
+    finalWeight = finalWeight - webServer.getBaseWeight();
+    if (finalWeight < 0) finalWeight = 0;
+    
+    // Log base correction based on configuration
+    #if ENABLE_BASE_CORRECTION_LOG
+    static float lastBaseCorrected = -1;
+    if (abs(finalWeight - lastBaseCorrected) > LOG_CHANGE_THRESHOLD) {
+      Serial.print("[WEIGHT] Base corrected: ");
+      Serial.print(weightData.stable, 3);
+      Serial.print(" - ");
+      Serial.print(webServer.getBaseWeight(), 3);
+      Serial.print(" = ");
+      Serial.println(finalWeight, 3);
+      lastBaseCorrected = finalWeight;
+    }
+    #endif
+  }
+  
+  String berat = String(finalWeight, WEIGHT_PRECISION);
+  
+  // Configurable logging frequency
+  #if ENABLE_DETAILED_LOGGING
+  static float lastLoggedWeight = -1;
+  static String lastLoggedQuality = "";
+  static unsigned long lastLogTime = 0;
+  
+  bool shouldLog = (abs(finalWeight - lastLoggedWeight) > LOG_CHANGE_THRESHOLD) || 
+                   (weightData.quality != lastLoggedQuality) ||
+                   (currentTime - lastLogTime > 5000); // Log every 5 seconds max
+  
+  if (shouldLog) {
+    Serial.print("[WEIGHT] Final weight: ");
+    Serial.print(berat);
+    Serial.print(" kg, Quality: ");
+    Serial.println(weightData.quality);
+    
+    lastLoggedWeight = finalWeight;
+    lastLoggedQuality = weightData.quality;
+    lastLogTime = currentTime;
+  }
+  #endif
+  
+  // Update web server with weight data (configurable frequency)
+  static unsigned long lastWebUpdate = 0;
+  if (currentTime - lastWebUpdate >= WEB_UPDATE_INTERVAL_MS) {
+    webServer.updateWeightData(weightData);
+    webServer.setFinalWeight(finalWeight); // Update berat final yang sudah dikoreksi
+    lastWebUpdate = currentTime;
+  }
+  
+  // Update LCD (configurable frequency)
+  static unsigned long lastLCDUpdate = 0;
+  if (currentTime - lastLCDUpdate >= LCD_UPDATE_INTERVAL_MS) {
+    lcdShowBerat(berat);
+    lastLCDUpdate = currentTime;
+  }
+  
+  // Sistem tunggu stabil sebelum kirim ke DB
+  static bool lastStableState = false;
+  static float lastStableWeight = 0;
+  static unsigned long stableStartTime = 0;
+  const unsigned long STABLE_DURATION_MS = 3000; // Tunggu 3 detik stabil
+  const float MIN_WEIGHT = 0.1; // Minimum 100g
+  const float WEIGHT_CHANGE_THRESHOLD = 0.05; // 50g threshold
+  
+  if (finalWeight > MIN_WEIGHT && weightData.isStable) {
+    if (!lastStableState) {
+      // Baru mulai stabil
+      stableStartTime = currentTime;
+      lastStableState = true;
+      lastStableWeight = finalWeight;
+      setColor(0, 255, 255); // Cyan - tunggu stabil
+      lcdShowFirebase("Menunggu stabil...");
+      webServer.setStabilizationStatus("waiting", 3);
+      Serial.println("[WEIGHT] Mulai tunggu stabilisasi: " + berat + " kg");
+    } else {
+      // Sudah stabil, cek durasi dan perubahan
+      unsigned long stableDuration = currentTime - stableStartTime;
+      float weightChange = abs(finalWeight - lastStableWeight);
+      
+      if (weightChange > WEIGHT_CHANGE_THRESHOLD) {
+        // Berat berubah, reset timer
+        stableStartTime = currentTime;
+        lastStableWeight = finalWeight;
+        setColor(255, 165, 0); // Orange - reset tunggu
+        lcdShowFirebase("Reset tunggu...");
+        webServer.setStabilizationStatus("waiting", 3);
+        Serial.println("[WEIGHT] Reset timer, berat berubah: " + berat + " kg");
+      } else if (stableDuration >= STABLE_DURATION_MS) {
+        // Sudah stabil cukup lama, kirim ke Firebase
+        webServer.setStabilizationStatus("sending", 0);
+        sendBeratKeFirebase(berat);
+        setColor(0, 255, 0); // Hijau - berhasil kirim
+        lcdShowFirebase("Data terkirim!");
+        Serial.println("[FIREBASE] Data stabil terkirim: " + berat + " kg");
+        buzz(50); // Bunyi konfirmasi
+        
+        // Reset untuk pengiriman berikutnya
+        lastStableState = false;
+        webServer.setStabilizationStatus("standby", 0);
+        delay(1000);
+      } else {
+        // Masih dalam periode tunggu
+        int remainingSeconds = (STABLE_DURATION_MS - stableDuration) / 1000 + 1;
+        setColor(0, 255, 255); // Cyan - tunggu
+        lcdShowFirebase("Tunggu " + String(remainingSeconds) + "s");
+        webServer.setStabilizationStatus("waiting", remainingSeconds);
+      }
+    }
+  } else {
+    // Reset jika tidak stabil atau berat terlalu kecil
+    if (lastStableState) {
+      Serial.println("[WEIGHT] Stabilisasi dibatalkan");
+      lastStableState = false;
+    }
+    
+    // Feedback visual berdasarkan kondisi
+    if (weightData.quality == "motion") {
+      setColor(255, 255, 0); // Kuning - gerakan
+      lcdShowFirebase("Gerakan terdeteksi");
+      webServer.setStabilizationStatus("motion", 0);
+    } else if (weightData.quality == "stabilizing") {
+      setColor(255, 165, 0); // Orange - stabilisasi
+      lcdShowFirebase("Stabilisasi...");
+      webServer.setStabilizationStatus("stabilizing", 0);
+    } else if (weightData.quality == "error") {
+      setColor(255, 0, 0); // Merah - error
+      lcdShowFirebase("Error sensor");
+      webServer.setStabilizationStatus("error", 0);
+    } else {
+      setColor(0, 0, 0); // Mati - standby
+      lcdShowFirebase("Stand by...");
+      webServer.setStabilizationStatus("standby", 0);
+    }
+  }
+  
+  // Handle tare button (fixed frequency for responsiveness)
+  static unsigned long lastTareCheck = 0;
+  if (currentTime - lastTareCheck >= 50) { // Check every 50ms
+    updateTareButton();
+    lastTareCheck = currentTime;
+  }
   /////////////////////////
   String uid;
   if (isRFIDValid(uid)) 
@@ -77,7 +248,8 @@ void loop() {
         setColor(255, 0, 0);
         buzz(300);
         delay(500);
-        Serial.println("[RFID] UID sudah aktif: " + uid);
+        Serial.print("[RFID] UID sudah aktif: ");
+        Serial.println(uid);
         setColor(255, 255, 0);
         lastUID = "";
         delay(500);
@@ -85,7 +257,12 @@ void loop() {
       } else {
         sendingActive = true; // Aktifkan pengiriman
         lastUID = uid;
-        Serial.println("[RFID] UID Terdeteksi: " + uid);
+        Serial.print("[RFID] UID Terdeteksi: ");
+        Serial.println(uid);
+        
+        // NEW: Update web server dengan RFID status
+        webServer.setRFIDStatus(uid);
+        
         lcdShowStatus("RFID OK");
         setColor(0, 255, 0); // Hijau
         buzz(100);        
@@ -133,6 +310,21 @@ void loop() {
       }
     }
   }
+}
 
-  delay(200);
+// NEW: Helper function to check weight stability
+bool isWeightStable(float weight) {
+  static float lastWeight = 0;
+  static int stableCount = 0;
+  const float tolerance = 0.01; // 10g tolerance
+  const int requiredStableReadings = 5;
+  
+  if (abs(weight - lastWeight) < tolerance) {
+    stableCount++;
+  } else {
+    stableCount = 0;
+  }
+  
+  lastWeight = weight;
+  return stableCount >= requiredStableReadings;
 }

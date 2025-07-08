@@ -84,46 +84,84 @@ void setupFirebase() {
   lcdShowFirebase("Firebase Siap..");
 }
 
-void sendBeratKeFirebase(const String& berat) { // Kirim data berat ke Firebase
-  if (!Firebase.ready()) 
-  { // Jika Firebase belum siap
+void sendBeratKeFirebase(const String& berat) {
+  if (!Firebase.ready()) {
     firebaseFailCount++;
     Serial.println("[Firebase] Token belum siap.");
     lcdShowFirebase("Token blm siap..");
-
-    if (firebaseFailCount >= MAX_FAILS_BEFORE_RESTART) 
-    { // Jika gagal terlalu banyak
-      Serial.println("[Firebase] Terlalu banyak gagal, restart...");
-      lcdShowFirebase("Restarting...");
-      LEDBuzz(100); // LED dan buzzer menyala sebagai tanda restart
-      buzz(100); // Bunyi buzzer sebagai tanda restart
-      delay(2000);
-      ESP.restart(); // Restart ESP jika gagal terlalu banyak
+    if (firebaseFailCount >= MAX_FAILS_BEFORE_RESTART) {
+      Serial.println("[Firebase] Restart ESP...");
+      ESP.restart();
     }
-    return; // Jika Firebase belum siap, keluar dari fungsi
+    return;
   }
 
-  firebaseFailCount = 0; // Reset fail count jika berhasil
-  String path = "/devices/" + String(DEVICE_ID) + "/berat_terakhir"; // Buat path untuk data berat
-
-  fbdo.clear(); // reset koneksi FirebaseData
-  if (Firebase.RTDB.setString(&fbdo, path, berat)) {
-    Serial.println("[Firebase] Berat terkirim: " + berat);
-    lcdShowFirebase("Kirim.. ");
-    setColor(0, 255, 0); // Hijau jika berhasil
+  firebaseFailCount = 0;
+  
+  // Struktur data yang lebih efisien
+  FirebaseJson json;
+  unsigned long timestamp = millis();
+  String sessionId = String(timestamp);
+  
+  // Data lengkap untuk session
+  json.set("weight", berat);
+  json.set("timestamp", timestamp);
+  json.set("device_id", DEVICE_ID);
+  json.set("quality", "stable");
+  
+  // Update current status (real-time)
+  String currentPath = "/devices/" + String(DEVICE_ID) + "/current";
+  fbdo.clear();
+  if (Firebase.RTDB.setJSON(&fbdo, currentPath, &json)) {
+    Serial.println("[Firebase] Current data updated: " + berat);
+    lcdShowFirebase("Data terkirim!");
+    setColor(0, 255, 0);
   } else {
-    Serial.println("[Firebase] Gagal kirim berat: " + fbdo.errorReason());
-    lcdShowFirebase("Kirim gagal..!");
-    setColor(255, 0, 0); // Merah jika gagal
-    buzz(200); 
-    ESP.restart(); // Restart ESP jika gagal terlalu banyak
+    Serial.println("[Firebase] Failed: " + fbdo.errorReason());
+    lcdShowFirebase("Kirim gagal!");
+    setColor(255, 0, 0);
+    return;
   }
+  
+  // Simpan ke history dengan auto-cleanup (hanya 50 data terakhir)
+  String historyPath = "/devices/" + String(DEVICE_ID) + "/history/" + sessionId;
+  fbdo.clear();
+  Firebase.RTDB.setJSON(&fbdo, historyPath, &json);
+  
+  // Auto-cleanup: hapus data lama (opsional)
+  static unsigned long lastCleanup = 0;
+  if (millis() - lastCleanup > 300000) { // Cleanup setiap 5 menit
+    cleanupOldData();
+    lastCleanup = millis();
+  }
+}
 
-  String logPath = "/devices/" + String(DEVICE_ID) + "/log/" + String(millis()); // Buat path log dengan timestamp
-  fbdo.clear(); // reset koneksi FirebaseData
-  if (Firebase.RTDB.setString(&fbdo, logPath, berat)) {
-    Serial.println("[Firebase] Log berat terkirim.");
-  } else {
-    Serial.println("[Firebase] Gagal kirim log: " + fbdo.errorReason());
+void cleanupOldData() {
+  String historyPath = "/devices/" + String(DEVICE_ID) + "/history";
+  fbdo.clear();
+  if (Firebase.RTDB.getJSON(&fbdo, historyPath)) {
+    FirebaseJson json = fbdo.jsonObject();
+    size_t count = json.iteratorBegin();
+    if (count > 50) {
+      String oldestKey;
+      unsigned long oldestTime = ULONG_MAX;
+      
+      for (size_t i = 0; i < count; i++) {
+        int type;
+        String key, value;
+        json.iteratorGet(i, type, key, value);
+        unsigned long time = key.toInt();
+        if (time < oldestTime) {
+          oldestTime = time;
+          oldestKey = key;
+        }
+      }
+      
+      if (oldestKey.length() > 0) {
+        Firebase.RTDB.deleteNode(&fbdo, historyPath + "/" + oldestKey);
+        Serial.println("[Firebase] Cleaned: " + oldestKey);
+      }
+    }
+    json.iteratorEnd();
   }
 }
