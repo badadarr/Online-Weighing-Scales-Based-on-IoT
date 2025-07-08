@@ -5,10 +5,10 @@
 #define WIFI_PASSWORD "calyaf1886jj"
 
 // Firebase Project
-#define API_KEY "AIzaSyDwdYrP2FEYV2hAS1QrYEcjXDJqcvUI4WQ"
-#define DATABASE_URL "https://timbangan-online-3cd46-default-rtdb.asia-southeast1.firebasedatabase.app"
-#define USER_EMAIL "admin@contoh.com"
-#define USER_PASSWORD "admin123"
+#define API_KEY "AIzaSyCpT8kEDaXLxqTavO4Als-w7Wn4BDcyRMM"
+#define DATABASE_URL "https://iot-scales-enhancement-default-rtdb.asia-southeast1.firebasedatabase.app"
+#define USER_EMAIL "esp32@timbangan-iot.com"
+#define USER_PASSWORD "esp32secure123"
 
 // Perangkat
 #define DEVICE_ID "esp32_timbangan_001"
@@ -63,3 +63,11 @@
 // Firebase Configuration
 #define FIREBASE_MIN_CHANGE 0.05
 #define FIREBASE_MAX_INTERVAL_MS 30000
+
+// Buzzer Sound Patterns
+#define BUZZ_STANDBY 0          // No sound for standby
+#define BUZZ_STABILIZING 50     // Short beep for stabilizing
+#define BUZZ_MOTION 100         // Medium beep for motion
+#define BUZZ_WAITING 200        // Long beep for waiting stable
+#define BUZZ_SUCCESS 300        // Success confirmation
+#define BUZZ_ERROR 500          // Error alert

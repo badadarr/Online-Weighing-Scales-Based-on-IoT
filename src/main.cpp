@@ -165,6 +165,7 @@ void loop() {
       setColor(0, 255, 255); // Cyan - tunggu stabil
       lcdShowFirebase("Menunggu stabil...");
       webServer.setStabilizationStatus("waiting", 3);
+      buzz(BUZZ_WAITING); // Long beep for waiting
       Serial.println("[WEIGHT] Mulai tunggu stabilisasi: " + berat + " kg");
     } else {
       // Sudah stabil, cek durasi dan perubahan
@@ -186,7 +187,7 @@ void loop() {
         setColor(0, 255, 0); // Hijau - berhasil kirim
         lcdShowFirebase("Data terkirim!");
         Serial.println("[FIREBASE] Data stabil terkirim: " + berat + " kg");
-        buzz(50); // Bunyi konfirmasi
+        buzz(BUZZ_SUCCESS); // Success confirmation
         
         // Reset untuk pengiriman berikutnya
         lastStableState = false;
@@ -207,24 +208,48 @@ void loop() {
       lastStableState = false;
     }
     
-    // Feedback visual berdasarkan kondisi
+    // Feedback visual dan audio berdasarkan kondisi
+    static String lastQuality = "";
+    static unsigned long lastBuzzTime = 0;
+    
     if (weightData.quality == "motion") {
       setColor(255, 255, 0); // Kuning - gerakan
       lcdShowFirebase("Gerakan terdeteksi");
       webServer.setStabilizationStatus("motion", 0);
+      
+      // Buzz only when status changes or every 3 seconds
+      if (lastQuality != "motion" || (currentTime - lastBuzzTime > 3000)) {
+        buzz(BUZZ_MOTION);
+        lastBuzzTime = currentTime;
+      }
     } else if (weightData.quality == "stabilizing") {
       setColor(255, 165, 0); // Orange - stabilisasi
       lcdShowFirebase("Stabilisasi...");
       webServer.setStabilizationStatus("stabilizing", 0);
+      
+      // Buzz only when status changes
+      if (lastQuality != "stabilizing") {
+        buzz(BUZZ_STABILIZING);
+        lastBuzzTime = currentTime;
+      }
     } else if (weightData.quality == "error") {
       setColor(255, 0, 0); // Merah - error
       lcdShowFirebase("Error sensor");
       webServer.setStabilizationStatus("error", 0);
+      
+      // Buzz every 5 seconds for error
+      if (lastQuality != "error" || (currentTime - lastBuzzTime > 5000)) {
+        buzz(BUZZ_ERROR);
+        lastBuzzTime = currentTime;
+      }
     } else {
       setColor(0, 0, 0); // Mati - standby
       lcdShowFirebase("Stand by...");
       webServer.setStabilizationStatus("standby", 0);
+      // No buzz for standby
     }
+    
+    lastQuality = weightData.quality;
   }
   
   // Handle tare button (fixed frequency for responsiveness)
