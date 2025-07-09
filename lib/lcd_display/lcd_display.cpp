@@ -11,7 +11,7 @@ void setupLCD() {
   lcd.setCursor(0, 0);
   lcd.print("Timbangan Online");
   lcd.setCursor(0, 1);
-  lcd.print("  by Badar Scales");
+  lcd.print("  by VeroScale  ");
   delay(2000);
   lcd.clear();
 }

@@ -44,12 +44,13 @@ public:
   void saveConfiguration();
   void loadConfiguration();
   void finishBaseCalibration(float weight);
-  
-
+  void startSystemCalibration(float weight);
+  void stopDataSending();
   
   // Simple HTML generators
   String getMainPageHTML();
   String getConfigPageHTML();
+  String getSystemPageHTML();
   String getStatusJSON();
   String getConfigJSON();
   
