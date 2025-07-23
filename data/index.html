@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>IoT Scale</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>IoT Scale</h1>
+        <div class="weight" id="weight">Loading...</div>
+        <div>Status: <span id="status">Ready</span></div>
+        
+        <div class="section">
+            <h3>Scale Configuration</h3>
+            <div id="scale-config" class="config-info">
+                <div>Base Mode: <span id="baseModeStatus">Loading...</span></div>
+                <div>Base Weight: <span id="baseWeightStatus">Loading...</span></div>
+                <div>Scale Ready: <span id="scaleReadyStatus">Loading...</span></div>
+            </div>
+        </div>
+        
+        <div id="access-status" class="access-status"></div>
+        <div id="rfid-status" class="rfid-status"></div>
+        
+        <div class="section">
+            <button class="btn" onclick="location='/config.html'">Configuration</button>
+            <button class="btn btn-warning" onclick="quickTare()">Quick Tare</button>
+        </div>
+    </div>
+    <script src="/script.js"></script>
+</body>
+</html>

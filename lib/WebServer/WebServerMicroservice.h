@@ -4,6 +4,7 @@
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <EEPROM.h>
+#include <SPIFFS.h>
 #include "config.h"
 #include "SensorReader.h"
 #include "SessionManager.h"
@@ -35,6 +36,9 @@ public:
   void handleClient();
   void loop();
   
+  // SPIFFS methods
+  bool initSPIFFS();
+  
   // Configuration methods
   void setBaseMode(bool mode);
   void setBaseWeight(float weight);
@@ -56,6 +60,7 @@ public:
   // Local web server endpoints
   String getStatusJSON();
   String getConfigJSON();
+  String getSystemConfigJSON();
   String getMainPageHTML();
   String getConfigPageHTML();
   
@@ -66,4 +71,11 @@ public:
   
   // RFID user management
   bool addRFIDUserToFirebase(String uid, String name, String email);
+  
+  // RFID data access methods
+  String getCurrentAuthorizedUser();
+  bool isWeighingAccessGranted();
+  bool isRFIDUsersDataCached();
+  int getCachedUsersCount();
+  bool collectRFIDUsersData();
 };

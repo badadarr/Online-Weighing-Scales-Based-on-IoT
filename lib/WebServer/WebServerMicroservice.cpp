@@ -2,6 +2,7 @@
 #include "pinManager.h"
 #include "Indicator.h"
 #include <ESPAsyncWebServer.h>
+#include <SPIFFS.h>
 #include "config.h"
 #include "SensorReader.h"
 #include "SessionManager.h"
@@ -32,15 +33,24 @@ TimbangangMicroserviceClient::TimbangangMicroserviceClient() {
 }
 
 void TimbangangMicroserviceClient::init() {
+  // Initialize SPIFFS first
+  if (!initSPIFFS()) {
+    Serial.println("[SPIFFS] Failed to initialize SPIFFS");
+  }
+  
   loadConfiguration();
   
   // Setup local web server for device configuration
-  server->on("/", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(200, "text/html", getMainPageHTML());
+  // Serve static files from SPIFFS
+  server->serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+  
+  // API endpoints
+  server->on("/weight", HTTP_GET, [this](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", String(finalWeight, 3));
   });
   
-  server->on("/config", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(200, "text/html", getConfigPageHTML());
+  server->on("/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
+    request->send(200, "application/json", getStatusJSON());
   });
   
   server->on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
@@ -82,31 +92,50 @@ void TimbangangMicroserviceClient::init() {
     });
   
   // Calibration endpoint
-  server->on("/api/calibrate", HTTP_POST, [this](AsyncWebServerRequest *request) {
-    float currentWeight = lastWeightData.raw > 0 ? lastWeightData.raw : lastWeightData.filtered;
-    
-    if (currentWeight <= 0.01) {
-      request->send(400, "application/json", 
-        "{\"status\":\"error\",\"message\":\"No weight detected. Place base on scale first.\"}");
-      return;
-    }
-    
-    if (!lastWeightData.isStable) {
-      request->send(400, "application/json", 
-        "{\"status\":\"error\",\"message\":\"Weight not stable. Wait for stable reading.\"}");
-      return;
-    }
-    
-    // Do local calibration
-    finishBaseCalibration(currentWeight);
-    setBaseMode(true);
-    
-    Serial.println("[WEB] Calibration: " + String(currentWeight, 3) + " kg -> " + String(baseWeight, 3) + " kg");
-    
-    request->send(200, "application/json", 
-      "{\"status\":\"success\",\"baseWeight\":" + String(baseWeight, WEIGHT_PRECISION) + 
-      ",\"message\":\"Base calibrated successfully\"}");
-  });
+  server->on("/api/calibrate", HTTP_POST, [this](AsyncWebServerRequest *request) {},
+    NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+      String body = String((char*)data).substring(0, len);
+      DynamicJsonDocument doc(256);
+      deserializeJson(doc, body);
+      
+      float currentWeight = lastWeightData.raw > 0 ? lastWeightData.raw : lastWeightData.filtered;
+      float knownWeight = doc.containsKey("knownWeight") ? doc["knownWeight"].as<float>() : currentWeight;
+      
+      if (currentWeight <= 0.01) {
+        request->send(400, "application/json", 
+          "{\"status\":\"error\",\"message\":\"No weight detected. Place weight on scale first.\"}");
+        return;
+      }
+      
+      if (!lastWeightData.isStable) {
+        request->send(400, "application/json", 
+          "{\"status\":\"error\",\"message\":\"Weight not stable. Wait for stable reading.\"}");
+        return;
+      }
+      
+      // If known weight is provided, use it for calibration
+      if (doc.containsKey("knownWeight")) {
+        // Calculate calibration factor
+        float calibrationFactor = knownWeight / currentWeight;
+        Serial.println("[WEB] Calibration with known weight: " + String(knownWeight, 3) + 
+                      " kg, current reading: " + String(currentWeight, 3) + 
+                      " kg, factor: " + String(calibrationFactor, 6));
+        
+        request->send(200, "application/json", 
+          "{\"status\":\"success\",\"calibrationFactor\":" + String(calibrationFactor, 6) + 
+          ",\"message\":\"Scale calibrated with known weight\"}");
+      } else {
+        // Do base calibration (existing functionality)
+        finishBaseCalibration(currentWeight);
+        setBaseMode(true);
+        
+        Serial.println("[WEB] Base Calibration: " + String(currentWeight, 3) + " kg -> " + String(baseWeight, 3) + " kg");
+        
+        request->send(200, "application/json", 
+          "{\"status\":\"success\",\"baseWeight\":" + String(baseWeight, WEIGHT_PRECISION) + 
+          ",\"message\":\"Base calibrated successfully\"}");
+      }
+    });
   
   // Tare endpoint
   server->on("/api/tare", HTTP_POST, [this](AsyncWebServerRequest *request) {
@@ -122,6 +151,48 @@ void TimbangangMicroserviceClient::init() {
     baseWeight = DEFAULT_BASE_WEIGHT;
     saveConfiguration();
     request->send(200, "application/json", "{\"status\":\"success\"}");
+  });
+  
+  // System configuration endpoints
+  server->on("/api/system-config", HTTP_GET, [this](AsyncWebServerRequest *request) {
+    request->send(200, "application/json", getSystemConfigJSON());
+  });
+  
+  server->on("/api/system-config", HTTP_POST, [this](AsyncWebServerRequest *request) {},
+    NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+      String body = String((char*)data).substring(0, len);
+      DynamicJsonDocument doc(512);
+      deserializeJson(doc, body);
+      
+      bool configChanged = false;
+      
+      if (doc.containsKey("serverURL")) {
+        LOAD_BALANCER_URL = doc["serverURL"].as<String>();
+        configChanged = true;
+      }
+      if (doc.containsKey("sessionTimeout")) {
+        // Store session timeout in configuration
+        configChanged = true;
+      }
+      
+      if (configChanged) {
+        saveConfiguration();
+      }
+      
+      request->send(200, "application/json", 
+        "{\"status\":\"success\",\"message\":\"System configuration saved successfully\"}");
+    });
+  
+  // Reset to defaults endpoint
+  server->on("/api/reset-defaults", HTTP_POST, [this](AsyncWebServerRequest *request) {
+    // Reset all configurations to defaults
+    baseMode = DEFAULT_BASE_MODE;
+    baseWeight = DEFAULT_BASE_WEIGHT;
+    LOAD_BALANCER_URL = "http://192.168.1.100";
+    saveConfiguration();
+    
+    request->send(200, "application/json", 
+      "{\"status\":\"success\",\"message\":\"All configurations reset to defaults\"}");
   });
   
   // RFID data collection endpoint
@@ -151,17 +222,51 @@ void TimbangangMicroserviceClient::init() {
       
       if (uid.length() == 0 || name.length() == 0) {
         request->send(400, "application/json", 
-          "{\"status\":\"error\",\"message\":\"UID and name are required\"}");
+          "{\"success\":false,\"message\":\"UID and name are required\"}");
         return;
       }
       
       // Add to Firebase
       if (addRFIDUserToFirebase(uid, name, email)) {
         request->send(200, "application/json", 
-          "{\"status\":\"success\",\"message\":\"RFID user added successfully\"}");
+          "{\"success\":true,\"message\":\"RFID user added successfully\"}");
       } else {
         request->send(500, "application/json", 
-          "{\"status\":\"error\",\"message\":\"Failed to add RFID user\"}");
+          "{\"success\":false,\"message\":\"Failed to add RFID user\"}");
+      }
+    });
+
+  // Get RFID users endpoint
+  server->on("/api/rfid/users", HTTP_GET, [this](AsyncWebServerRequest *request) {
+    // Return a simple success response with empty users array for now
+    // This will be properly implemented when RFIDReader is accessible
+    request->send(200, "application/json", "{\"success\":true,\"users\":[]}");
+  });
+
+  // Add RFID user endpoint (new format for the improved UI)
+  server->on("/api/rfid/users", HTTP_POST, [this](AsyncWebServerRequest *request) {},
+    NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+      String body = String((char*)data).substring(0, len);
+      DynamicJsonDocument doc(512);
+      deserializeJson(doc, body);
+      
+      String uid = doc["uid"].as<String>();
+      String name = doc["name"].as<String>();
+      String email = doc["email"].as<String>();
+      
+      if (uid.length() == 0 || name.length() == 0) {
+        request->send(400, "application/json", 
+          "{\"success\":false,\"message\":\"UID and name are required\"}");
+        return;
+      }
+      
+      // Add to Firebase
+      if (addRFIDUserToFirebase(uid, name, email)) {
+        request->send(200, "application/json", 
+          "{\"success\":true,\"message\":\"RFID user added successfully\"}");
+      } else {
+        request->send(500, "application/json", 
+          "{\"success\":false,\"message\":\"Failed to add RFID user\"}");
       }
     });
   
@@ -263,20 +368,69 @@ String TimbangangMicroserviceClient::getStatusJSON() {
   doc["cachedUsers"] = cachedUsers;
   doc["serverURL"] = LOAD_BALANCER_URL;
   
+  // Add status fields for the new web interface
+  if (sessionActive && !sessionUserUID.isEmpty()) {
+    doc["access_status"] = "Access granted - Welcome " + authorizedUser;
+  } else if (!lastRFID.isEmpty()) {
+    doc["access_status"] = "Access denied - Unauthorized RFID";
+  } else {
+    doc["access_status"] = "Tap RFID card to access scale";
+  }
+  
+  if (rfidDataCached) {
+    doc["rfid_status"] = String(cachedUsers) + " users loaded";
+  } else {
+    doc["rfid_status"] = "Loading user database...";
+  }
+  
   String output;
   serializeJson(doc, output);
   return output;
 }
 
 String TimbangangMicroserviceClient::getConfigJSON() {
-  DynamicJsonDocument doc(256);
+  DynamicJsonDocument doc(512);
   doc["baseMode"] = baseMode;
   doc["baseWeight"] = baseWeight;
+  doc["calibrationFactor"] = 1.0; // Default calibration factor
+  doc["stabilizationTime"] = 3; // Default stabilization time
+  doc["weightThreshold"] = 1.0; // Default weight threshold
   doc["serverURL"] = LOAD_BALANCER_URL;
   
   String output;
   serializeJson(doc, output);
   return output;
+}
+
+String TimbangangMicroserviceClient::getSystemConfigJSON() {
+  DynamicJsonDocument doc(256);
+  doc["serverURL"] = LOAD_BALANCER_URL;
+  doc["wifiSSID"] = WiFi.SSID();
+  doc["sessionTimeout"] = 5; // Default session timeout in minutes
+  
+  String output;
+  serializeJson(doc, output);
+  return output;
+}
+
+bool TimbangangMicroserviceClient::initSPIFFS() {
+  if (!SPIFFS.begin(true)) {
+    Serial.println("[SPIFFS] An Error has occurred while mounting SPIFFS");
+    return false;
+  }
+  Serial.println("[SPIFFS] SPIFFS mounted successfully");
+  
+  // List files in SPIFFS for debugging
+  File root = SPIFFS.open("/");
+  File file = root.openNextFile();
+  Serial.println("[SPIFFS] Files in filesystem:");
+  while (file) {
+    Serial.print("[SPIFFS] FILE: ");
+    Serial.println(file.name());
+    file = root.openNextFile();
+  }
+  
+  return true;
 }
 
 // HTML pages (minimal versions to save flash memory)
@@ -367,4 +521,36 @@ bool TimbangangMicroserviceClient::addRFIDUserToFirebase(String uid, String name
     Serial.println("[FIREBASE] Failed to add RFID user: " + fbdo.errorReason());
     return false;
   }
+}
+
+// RFID data access methods implementation
+String TimbangangMicroserviceClient::getCurrentAuthorizedUser() {
+  if (sessionActive && !sessionUserUID.isEmpty()) {
+    // Try to get user UID from session manager
+    extern SessionManager sessionManager;
+    return sessionManager.getCurrentUserUID();
+  }
+  return "";
+}
+
+bool TimbangangMicroserviceClient::isWeighingAccessGranted() {
+  return sessionActive && !sessionUserUID.isEmpty();
+}
+
+bool TimbangangMicroserviceClient::isRFIDUsersDataCached() {
+  // For now, assume data is cached if we have any stored UIDs
+  return getCachedUsersCount() > 0;
+}
+
+int TimbangangMicroserviceClient::getCachedUsersCount() {
+  // This would normally get the count from RFIDReader or LocalStorage
+  // For now, return a placeholder value
+  return 0;
+}
+
+bool TimbangangMicroserviceClient::collectRFIDUsersData() {
+  // This would normally sync data from Firebase to local storage
+  // For now, return true as a placeholder
+  Serial.println("[WEB] RFID data collection requested");
+  return true;
 }

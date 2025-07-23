@@ -36,6 +36,29 @@ void storeUID(String uid) {
   }
 }
 
+String getAllStoredUIDs() {
+  String json = "{\"success\":true,\"users\":[";
+  bool first = true;
+  
+  for (int i = EEPROM_ADDR_UID; i < EEPROM_SIZE; i += 32) {
+    String stored = "";
+    for (int j = 0; j < 32; j++) {
+      char c = EEPROM.read(i + j);
+      if (c == 0 || c == 255) break;
+      stored += c;
+    }
+    
+    if (stored.length() > 0) {
+      if (!first) json += ",";
+      json += "{\"uid\":\"" + stored + "\",\"name\":\"User " + stored.substring(0,4) + "\"}";
+      first = false;
+    }
+  }
+  
+  json += "]}";
+  return json;
+}
+
 // Simpan faktor kalibrasi ke EEPROM
 void saveCalibrationToEEPROM(float faktor) {
     EEPROM.put(EEPROM_ADDR_KALIBRASI, faktor);

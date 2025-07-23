@@ -1,4 +1,10 @@
-#pragma once
+#pragma# Data collection functions
+bool collectRFIDUsersData();
+bool syncRFIDUsersFromFirebase();
+bool isRFIDUsersDataCached();
+void clearRFIDUsersCache();
+int getCachedUsersCount();
+String getCachedUsersJSON();
 #include <Arduino.h>
 
 // RFID setup and basic functions

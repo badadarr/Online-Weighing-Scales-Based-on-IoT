@@ -581,3 +581,7 @@ void clearRFIDUsersCache() {
 int getCachedUsersCount() {
   return cachedUsersCount;
 }
+
+String getCachedUsersJSON() {
+  return getAllStoredUIDs();
+}
