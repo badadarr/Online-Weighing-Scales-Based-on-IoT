@@ -35,19 +35,27 @@ void setupFirebase() {
   configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
   Serial.println("[NTP] Sinkronisasi waktu...");
 
-  // Tampilkan waktu sistem (debug)
+  // Tunggu sinkronisasi waktu selesai (penting untuk SSL)
+  int ntpRetries = 0;
   struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) {
-    Serial.println("[NTP] Gagal mendapatkan waktu!");
-  } else {
+  while (!getLocalTime(&timeinfo) && ntpRetries < 10) {
+    Serial.println("[NTP] Menunggu sinkronisasi waktu...");
+    lcdShowStatus("Sync NTP...");
+    delay(1000);
+    ntpRetries++;
+  }
+  
+  if (ntpRetries < 10) {
     Serial.printf("[NTP] Waktu sekarang: %s", asctime(&timeinfo));
+  } else {
+    Serial.println("[NTP] Gagal sinkronisasi waktu, melanjutkan...");
   }
 
   // Konfigurasi Firebase
   config.api_key = API_KEY;
   config.database_url = DATABASE_URL;
-  //config.ssl_buffer_size = 4096; // buffer besar untuk stabilitas SSL
-  //config.token_status_callback = tokenStatusCallback; // opsional
+  config.timeout.serverResponse = 10000; // Timeout 10 detik
+  config.timeout.wifiReconnect = 10000;  // Timeout 10 detik
 
   auth.user.email = USER_EMAIL;
   auth.user.password = USER_PASSWORD;
@@ -55,7 +63,7 @@ void setupFirebase() {
   // Mulai koneksi Firebase
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
-  delay(500); // beri waktu untuk inisialisasi SSL
+  delay(1000); // beri waktu lebih untuk inisialisasi SSL
 
   fbdo.setResponseSize(1024); // Ukuran buffer untuk response JSON
   fbdo.setBSSLBufferSize(2048, 1024);   // RX dan TX buffer SSL
@@ -63,35 +71,43 @@ void setupFirebase() {
   // Cek memori heap
   Serial.printf("[Heap] Free heap: %d bytes\n", ESP.getFreeHeap());
 
-  // Tunggu Firebase siap
+  // Tunggu Firebase siap dengan retry yang lebih lama
   Serial.print("[Firebase] Autentikasi...");
-  lcdShowFirebase("Auth Firebase...");
+  lcdShowQuality("Auth Firebase");
 
-  unsigned long start = millis();
-  while (!Firebase.ready()) {
-    delay(500);
+  int authRetries = 0;
+  const int MAX_AUTH_RETRIES = 5;
+  
+  while (!Firebase.ready() && authRetries < MAX_AUTH_RETRIES) {
     Serial.print(".");
-    if (millis() - start > 10000) {
-      Serial.println("\n[Firebase] Gagal login, restart ESP...");
-      Serial.println("[Firebase] Alasan: " + fbdo.errorReason());
-      lcdShowFirebase("Firebase Gagal!");
-      delay(3000);
-      ESP.restart();
-    }
+    lcdShowStatus("Auth Retry " + String(authRetries + 1));
+    delay(2000); // Tunggu lebih lama antara percobaan
+    authRetries++;
   }
 
-  Serial.println("\n[Firebase] Siap kirim data.");
-  lcdShowFirebase("Firebase Siap..");
+  if (Firebase.ready()) {
+    Serial.println("\n[Firebase] Autentikasi berhasil!");
+    lcdShowQuality("Firebase OK");
+  } else {
+    Serial.println("\n[Firebase] Autentikasi gagal setelah " + String(MAX_AUTH_RETRIES) + " percobaan");
+    Serial.println("[Firebase] Alasan: " + fbdo.errorReason());
+    lcdShowQuality("FB Offline");
+    // Tidak restart, biarkan sistem berjalan dalam mode offline
+  }
+
+  Serial.println("[Firebase] Siap kirim data.");
 }
 
 void sendBeratKeFirebase(const String& berat) {
   if (!Firebase.ready()) {
     firebaseFailCount++;
-    Serial.println("[Firebase] Token belum siap.");
-    lcdShowFirebase("Token blm siap..");
+    Serial.println("[Firebase] Token belum siap. Percobaan: " + String(firebaseFailCount));
+    lcdShowQuality("Offline");
+    
+    // Jangan restart, hanya log pesan error
     if (firebaseFailCount >= MAX_FAILS_BEFORE_RESTART) {
-      Serial.println("[Firebase] Restart ESP...");
-      ESP.restart();
+      Serial.println("[Firebase] Firebase offline, melanjutkan dalam mode lokal");
+      firebaseFailCount = 0; // Reset counter untuk mencegah spam log
     }
     return;
   }
@@ -109,16 +125,21 @@ void sendBeratKeFirebase(const String& berat) {
   json.set("device_id", DEVICE_ID);
   json.set("quality", "stable");
   
-  // Update current status (real-time)
+  // Update current status (real-time) - with frequency limit
+  static unsigned long lastFirebaseUpdate = 0;
   String currentPath = "/devices/" + String(DEVICE_ID) + "/current";
   fbdo.clear();
   if (Firebase.RTDB.setJSON(&fbdo, currentPath, &json)) {
-    Serial.println("[Firebase] Current data updated: " + berat);
-    lcdShowFirebase("Data terkirim!");
+    // Only log successful updates every 10 seconds to reduce spam
+    if (millis() - lastFirebaseUpdate > 10000) {
+      Serial.println("[Firebase] Current data updated: " + berat);
+      lastFirebaseUpdate = millis();
+    }
+    lcdShowQuality("Sent OK");
     setColor(0, 255, 0);
   } else {
     Serial.println("[Firebase] Failed: " + fbdo.errorReason());
-    lcdShowFirebase("Kirim gagal!");
+    lcdShowQuality("Error");
     setColor(255, 0, 0);
     return;
   }

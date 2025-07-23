@@ -14,12 +14,17 @@
 #include "LocalStorage.h"   // Local storage untuk menyimpan data secara lokal
 #include "lcd_display.h"    // LCD display untuk menampilkan informasi
 #include "pinManager.h"     // Pin manager untuk mengatur pin GPIO
-#include "WebServer.h"      // NEW: Web server untuk konfigurasi via website
+#include "WebServerMicroservice.h" // Microservice client untuk komunikasi dengan server cluster
+#include "SessionManager.h" // Session manager untuk login/logout dengan RFID
 
 // File: src/main.cpp
 unsigned long lastUpdate = 0;
 String lastUID = "";
-bool sendingActive = false; // Status pengiriman data
+bool sendingActive = false; // Status pengiriman data (now controlled by session)
+
+// Global instances
+extern SessionManager sessionManager;
+extern TimbangangMicroserviceClient webMicroservice;
 
 // System calibration control
 bool systemCalibrationRequested = false;
@@ -57,14 +62,18 @@ void setup()
   setupRFID();     // Inisialisasi RFID reader
   setupSensor();   // Inisialisasi sensor
   setupFirebase(); // Inisialisasi server / firebase
+  
+  // Initialize session as inactive
+  lcdShowStatus("Init Session...");
+  sendingActive = false; // Start with sending inactive
 
   // NEW: Initialize web server for configuration
   lcdShowStatus("Init Web Server...");
-  webServer.init();
-  webServer.begin();
-  webServer.setSystemReady(true);
+  webMicroservice.init();
+  webMicroservice.begin();
+  webMicroservice.setSystemReady(true);
   Serial.print("[WEB] Web server started at: http://");
-  Serial.println(webServer.getWebServerIP());
+  Serial.println(webMicroservice.getWebServerIP());
 
   lcdShowStatus("Siap digunakan...");
   ulangiBuzzer();
@@ -84,8 +93,55 @@ void loop()
   }
   lastLoop = currentTime;
 
+  // Handle RFID access control first
+  handleRFIDAccess();
+  
+  // Check if weighing access is granted before proceeding
+  if (!isWeighingAccessGranted()) {
+    // No access granted - show waiting message and skip weighing operations
+    static unsigned long lastAccessMsg = 0;
+    if (currentTime - lastAccessMsg > 5000) {
+      lcdShowStatus("Tap RFID untuk Akses");
+      setColor(255, 255, 0); // Yellow
+      lastAccessMsg = currentTime;
+    }
+    
+    // Handle web server even without access
+    webMicroservice.handleClient();
+    webMicroservice.loop();
+    delay(100);
+    return;
+  } else {
+    // Show logout reminder periodically when in weighing session
+    static unsigned long lastLogoutReminder = 0;
+    if (sessionManager.isSessionActive() && 
+        currentTime - lastLogoutReminder > 30000) { // Every 30 seconds
+      static bool showReminder = false;
+      if (showReminder) {
+        lcdShowLogoutInstructions();
+        delay(2000);
+        lcdShowStatus("Siap Menimbang");
+      }
+      showReminder = !showReminder;
+      lastLogoutReminder = currentTime;
+    }
+  }
+  
+  // Extend access time when weighing activity detected (less frequent)
+  static unsigned long lastWeighingActivity = 0;
+  if (currentTime - lastWeighingActivity > 10000) { // Every 10 seconds instead of 1 second
+    extendAccess();
+    lastWeighingActivity = currentTime;
+  }
+
   // Handle web server requests
-  webServer.handleClient();
+  webMicroservice.handleClient();
+  
+  // Handle microservice communication (WebSocket and API)
+  webMicroservice.loop();
+  
+  // Check for access timeout (handled in handleRFIDAccess())
+  // Access control is managed by RFID system
   
   // Handle web requests
   if (webTareRequested) {
@@ -96,10 +152,11 @@ void loop()
   }
   
   if (webStopRequested) {
-    Serial.println("[WEB] Stopping data sending via web request");
+    Serial.println("[WEB] Resetting access via web request");
+    resetAccess();
     sendingActive = false;
     lastStableState = false;
-    lcdShowStatus("Data Stopped");
+    lcdShowStatus("Access Reset");
     webStopRequested = false;
   }
   
@@ -146,26 +203,26 @@ void loop()
   else
   {
     // Use cached weight data
-    weightData = webServer.getLastWeightData();
+    weightData = webMicroservice.getLastWeightData();
   }
 
   // Apply base correction based on web configuration
   float finalWeight = weightData.stable;
   WeightData correctedWeightData = weightData;
 
-  if (webServer.getBaseMode())
+  if (webMicroservice.getBaseMode())
   {
     // Apply base correction to both stable and filtered weights
     if (weightData.stable > 0)
     {
-      finalWeight = weightData.stable - webServer.getBaseWeight();
+      finalWeight = weightData.stable - webMicroservice.getBaseWeight();
       if (finalWeight < 0)
         finalWeight = 0;
     }
 
     if (weightData.filtered > 0)
     {
-      correctedWeightData.filtered = weightData.filtered - webServer.getBaseWeight();
+      correctedWeightData.filtered = weightData.filtered - webMicroservice.getBaseWeight();
       if (correctedWeightData.filtered < 0)
         correctedWeightData.filtered = 0;
     }
@@ -180,7 +237,7 @@ void loop()
       Serial.print("[WEIGHT] Base corrected: ");
       Serial.print(weightData.stable, 3);
       Serial.print(" - ");
-      Serial.print(webServer.getBaseWeight(), 3);
+      Serial.print(webMicroservice.getBaseWeight(), 3);
       Serial.print(" = ");
       Serial.println(finalWeight, 3);
       lastBaseCorrected = finalWeight;
@@ -218,8 +275,8 @@ void loop()
   static unsigned long lastWebUpdate = 0;
   if (currentTime - lastWebUpdate >= WEB_UPDATE_INTERVAL_MS)
   {
-    webServer.updateWeightData(correctedWeightData); // Use corrected weight data
-    webServer.setFinalWeight(finalWeight);           // Update berat final yang sudah dikoreksi
+    webMicroservice.updateWeightData(correctedWeightData); // Use corrected weight data
+    webMicroservice.setFinalWeight(finalWeight);           // Update berat final yang sudah dikoreksi
     lastWebUpdate = currentTime;
   }
 
@@ -236,7 +293,7 @@ void loop()
   static float lastStableWeight = 0;
   static unsigned long stableStartTime = 0;
   const unsigned long STABLE_DURATION_MS = 3000; // Tunggu 3 detik stabil
-  const float MIN_WEIGHT = 0.05;                 // Minimum 50g (lebih rendah)
+  const float MIN_WEIGHT = 0.2;                  // Minimum 200g (lebih tinggi untuk menghindari noise)
   const float WEIGHT_CHANGE_THRESHOLD = 0.02;    // 20g threshold (lebih sensitif)
 
   if (finalWeight > MIN_WEIGHT && correctedWeightData.isStable)
@@ -248,8 +305,8 @@ void loop()
       lastStableState = true;
       lastStableWeight = finalWeight;
       setColor(0, 255, 255); // Cyan - tunggu stabil
-      lcdShowFirebase("Menunggu stabil...");
-      webServer.setStabilizationStatus("waiting", 3);
+      lcdShowQuality("Waiting");
+      webMicroservice.setStabilizationStatus("waiting", 3);
       buzz(BUZZ_WAITING); // Long beep for waiting
       Serial.println("[WEIGHT] Mulai tunggu stabilisasi: " + berat + " kg");
     }
@@ -265,32 +322,54 @@ void loop()
         stableStartTime = currentTime;
         lastStableWeight = finalWeight;
         setColor(255, 165, 0); // Orange - reset tunggu
-        lcdShowFirebase("Reset tunggu...");
-        webServer.setStabilizationStatus("waiting", 3);
+        lcdShowQuality("Change");
+        webMicroservice.setStabilizationStatus("waiting", 3);
         Serial.println("[WEIGHT] Reset timer, berat berubah: " + String(weightChange, 3) + " kg");
       }
       else if (stableDuration >= STABLE_DURATION_MS)
       {
-        // Sudah stabil cukup lama, kirim ke Firebase
-        webServer.setStabilizationStatus("sending", 0);
-        sendBeratKeFirebase(berat);
-        setColor(0, 255, 0); // Hijau - berhasil kirim
-        lcdShowFirebase("Data terkirim!");
-        Serial.println("[FIREBASE] Data stabil terkirim: " + berat + " kg");
-        buzz(BUZZ_SUCCESS); // Success confirmation
+        // Only send to Firebase if session is active
+        if (sessionManager.isSessionActive() && sendingActive) {
+          // Sudah stabil cukup lama, kirim ke Firebase
+          webMicroservice.setStabilizationStatus("sending", 0);
+          sendBeratKeFirebase(berat);
+          setColor(0, 255, 0); // Hijau - berhasil kirim
+          lcdShowQuality("Sent OK"); // Changed to show Quality instead of Status
+          Serial.println("[FIREBASE] Data stabil terkirim: " + berat + " kg");
+          buzz(BUZZ_SUCCESS); // Success confirmation
+        } else {
+          // Session not active, don't send data
+          setColor(255, 255, 0); // Yellow - no session
+          lcdShowQuality("No Session");
+          Serial.println("[FIREBASE] Data tidak dikirim - Tidak ada session aktif");
+        }
 
         // Reset untuk pengiriman berikutnya
         lastStableState = false;
-        webServer.setStabilizationStatus("standby", 0);
-        delay(1000);
+        lastStableWeight = 0; // Reset berat stabil
+        webMicroservice.setStabilizationStatus("standby", 0);
+        
+        // Show success message longer and then show quality
+        delay(2000); // Show "Sent OK" for 2 seconds
+        // Show quality instead of clearing the line
+        if (correctedWeightData.quality == "stable") {
+          lcdShowQuality("Stable");
+        } else if (correctedWeightData.quality == "good") {
+          lcdShowQuality("Good");
+        } else {
+          lcdShowQuality("Ready");
+        }
+        
+        // Add delay to prevent immediate re-triggering
+        delay(1000); // Additional 1 second pause
       }
       else
       {
         // Masih dalam periode tunggu
         int remainingSeconds = (STABLE_DURATION_MS - stableDuration) / 1000 + 1;
         setColor(0, 255, 255); // Cyan - tunggu
-        lcdShowFirebase("Tunggu " + String(remainingSeconds) + "s");
-        webServer.setStabilizationStatus("waiting", remainingSeconds);
+        lcdShowQuality("Wait: " + String(remainingSeconds) + "s");
+        webMicroservice.setStabilizationStatus("waiting", remainingSeconds);
       }
     }
   }
@@ -301,17 +380,29 @@ void loop()
     {
       Serial.println("[WEIGHT] Stabilisasi dibatalkan - Weight: " + String(finalWeight, 3) + ", Stable: " + String(correctedWeightData.isStable));
       lastStableState = false;
+      lastStableWeight = 0; // Reset berat stabil
+      
+      // Show quality status when going back to standby
+      static unsigned long lastStandbyClear = 0;
+      if (finalWeight < MIN_WEIGHT && currentTime - lastStandbyClear > 3000) {
+        lcdShowQuality("Ready"); // Show quality status instead of clearing
+        lastStandbyClear = currentTime;
+      }
     }
 
     // Feedback visual dan audio berdasarkan kondisi
     static String lastQuality = "";
     static unsigned long lastBuzzTime = 0;
+    static unsigned long lastFirebaseDisplayUpdate = 0; // Control Firebase display updates
 
     if (correctedWeightData.quality == "motion")
     {
       setColor(255, 255, 0); // Kuning - gerakan
-      lcdShowFirebase("Gerakan terdeteksi");
-      webServer.setStabilizationStatus("motion", 0);
+      if (currentTime - lastFirebaseDisplayUpdate > 1000) { // Update every 1 second
+        lcdShowQuality("Motion");
+        lastFirebaseDisplayUpdate = currentTime;
+      }
+      webMicroservice.setStabilizationStatus("motion", 0);
 
       // Buzz only when status changes or every 3 seconds
       if (lastQuality != "motion" || (currentTime - lastBuzzTime > 3000))
@@ -323,8 +414,11 @@ void loop()
     else if (correctedWeightData.quality == "stabilizing")
     {
       setColor(255, 165, 0); // Orange - stabilisasi
-      lcdShowFirebase("Stabilisasi...");
-      webServer.setStabilizationStatus("stabilizing", 0);
+      if (currentTime - lastFirebaseDisplayUpdate > 1000) { // Update every 1 second
+        lcdShowQuality("Stabilizing");
+        lastFirebaseDisplayUpdate = currentTime;
+      }
+      webMicroservice.setStabilizationStatus("stabilizing", 0);
 
       // Buzz only when status changes
       if (lastQuality != "stabilizing")
@@ -336,8 +430,11 @@ void loop()
     else if (correctedWeightData.quality == "error")
     {
       setColor(255, 0, 0); // Merah - error
-      lcdShowFirebase("Error sensor");
-      webServer.setStabilizationStatus("error", 0);
+      if (currentTime - lastFirebaseDisplayUpdate > 2000) { // Update every 2 seconds
+        lcdShowQuality("Error");
+        lastFirebaseDisplayUpdate = currentTime;
+      }
+      webMicroservice.setStabilizationStatus("error", 0);
 
       // Buzz every 5 seconds for error
       if (lastQuality != "error" || (currentTime - lastBuzzTime > 5000))
@@ -348,9 +445,23 @@ void loop()
     }
     else
     {
-      setColor(0, 0, 0); // Mati - standby
-      lcdShowFirebase("Stand by...");
-      webServer.setStabilizationStatus("standby", 0);
+      // Stable/standby mode - show quality status based on actual quality
+      static unsigned long lastQualityUpdate = 0;
+      if (currentTime - lastQualityUpdate > 2000) { // Update every 2 seconds
+        setColor(0, 255, 0); // Green - stable quality
+        
+        // Show actual quality from sensor
+        if (correctedWeightData.quality == "stable") {
+          lcdShowQuality("Stable");
+        } else if (correctedWeightData.quality == "good") {
+          lcdShowQuality("Good");
+        } else {
+          lcdShowQuality("Ready");
+        }
+        
+        webMicroservice.setStabilizationStatus("standby", 0);
+        lastQualityUpdate = currentTime;
+      }
       // No buzz for standby
     }
 
@@ -365,67 +476,24 @@ void loop()
     lastTareCheck = currentTime;
   }
   /////////////////////////
-  String uid;
-  if (isRFIDValid(uid))
-  { // Cek apakah RFID valid
-    uid.trim();
-    if (isUIDRegistered(uid) || isUIDStored(uid))
-    { // Jika UID terdaftar atau disimpan
-      // Toggle logic
-      if (sendingActive && uid == lastUID)
-      {                        // dan Jika pengiriman aktif dan UID sama dengan yang terakhir
-        sendingActive = false; // Matikan pengiriman
-        lcdShowStatus("Stop Kirim");
-        setColor(255, 0, 0);
-        buzz(300);
-        delay(500);
-        Serial.print("[RFID] UID sudah aktif: ");
-        Serial.println(uid);
-        setColor(255, 255, 0);
-        lastUID = "";
-        delay(500);
-        return;
-      }
-      else
-      {
-        sendingActive = true; // Aktifkan pengiriman
-        lastUID = uid;
-        Serial.print("[RFID] UID Terdeteksi: ");
-        Serial.println(uid);
+  // RFID Access Control (handled in handleRFIDAccess() above)
+  // Access is already validated, system can proceed with weighing
+  
+  // Get current authorized user
+  String currentUser = getCurrentAuthorizedUser();
+  
+  // Update web server with current user info
+  webMicroservice.setRFIDStatus(currentUser);
 
-        // NEW: Update web server dengan RFID status
-        webServer.setRFIDStatus(uid);
-
-        lcdShowStatus("RFID OK");
-        setColor(0, 255, 0); // Hijau
-        buzz(100);
-        setColor(0, 255, 0); // Hijau
-        delay(100);
-        lcdShowRFID(uid);
-        storeUID(uid);
-        delay(500); // Tunda untuk menghindari pembacaan ganda
-      }
-    }
-    else
-    {
-      Serial.println("[RFID] Tidak dikenal!"); // UID tidak terdaftar
-      lcdShowError("RFID Tidak Dikenal");
-      setColor(255, 0, 0);
-      buzz(300);
-      lcdShowStatus("RFID Baru");
-      requestRFIDRegistration(uid);
-      lcdShowStatus("Scan RFID...");
-      setColor(50, 255, 50);
-      delay(2000);
-    }
-    delay(3000);
-  }
-
-  // Kirim berat jika aktif
-  if (sendingActive && berat != "")
-  { // Jika pengiriman aktif dan berat valid
-    sendBeratKeFirebase(berat);
-    delay(200); // Atur interval pengiriman sesuai kebutuhan
+  // Only extend access time when weighing, don't send data continuously
+  if (isWeighingAccessGranted() && sessionManager.isSessionActive() && berat != "")
+  { 
+    // Set sending active only when session is active
+    sendingActive = sessionManager.isSessionActive();
+    extendAccess(); // Extend access time when activity detected
+  } else {
+    // Set sending inactive when no session
+    sendingActive = false;
   }
 
   // Cek perintah dari Serial Monitor
@@ -540,10 +608,15 @@ void loop()
       Serial.println("Is Stable: " + String(currentData.isStable ? "Yes" : "No"));
       Serial.println("Has Motion: " + String(currentData.hasMotion ? "Yes" : "No"));
       Serial.println("Faktor Kalibrasi: " + String(getFaktorKalibrasi(), 6));
-      Serial.println("Base Mode: " + String(webServer.getBaseMode() ? "ON" : "OFF"));
-      Serial.println("Base Weight: " + String(webServer.getBaseWeight(), 3) + " kg");
+      Serial.println("Base Mode: " + String(webMicroservice.getBaseMode() ? "ON" : "OFF"));
+      Serial.println("Base Weight: " + String(webMicroservice.getBaseWeight(), 3) + " kg");
       Serial.println("Final Weight: " + String(finalWeight, 3) + " kg");
       Serial.println("RFID Active: " + String(sendingActive ? "Yes" : "No"));
+      Serial.println("Session Active: " + String(sessionManager.isSessionActive() ? "Yes" : "No"));
+      if (sessionManager.isSessionActive()) {
+        Serial.println("Current User: " + sessionManager.getCurrentUserUID());
+        Serial.println("Session Duration: " + String(sessionManager.getSessionDuration() / 1000) + " seconds");
+      }
       Serial.println("===================");
     }
     else if (cmd == "test")
@@ -564,7 +637,8 @@ void loop()
       Serial.println("tare              - Lakukan tare manual (reset ke nol)");
       Serial.println("status            - Tampilkan status lengkap sensor");
       Serial.println("test              - Test pembacaan 10x berturut-turut");
-      Serial.println("stop              - Hentikan pengiriman data ke Firebase");
+      Serial.println("stop              - Hentikan pengiriman data dan logout");
+      Serial.println("session           - Tampilkan status session saat ini");
       Serial.println("help              - Tampilkan bantuan ini");
       Serial.println("\n=== TIPS KALIBRASI ===");
       Serial.println("1. Pastikan timbangan stabil dan tidak bergetar");
@@ -575,11 +649,18 @@ void loop()
     }
     else if (cmd == "stop")
     {
+      if (sessionManager.isSessionActive()) {
+        sessionManager.logout();
+      }
       sendingActive = false;
       lastStableState = false;
       Serial.println("[SYSTEM] Pengiriman data ke Firebase dihentikan");
-      Serial.println("[INFO] Scan RFID untuk mengaktifkan kembali");
-      lcdShowStatus("Data Stopped");
+      Serial.println("[INFO] Scan RFID untuk login kembali");
+      lcdShowStatus("Logged Out");
+    }
+    else if (cmd == "session")
+    {
+      sessionManager.printSessionStatus();
     }
     else if (cmd != "")
     {

@@ -31,9 +31,14 @@ void lcdShowStatus(String msg) {
 void lcdShowFirebase(String dt) {
   //lcd.clear();
   lcd.setCursor(0, 1);
-  lcd.print("RTDB:");
-  lcd.setCursor(6, 1);
-  lcd.print(dt.substring(0, 16));
+  lcd.print("Quality:");
+  lcd.setCursor(9, 1);
+  // Clear the rest of the line first
+  lcd.print("       "); // Clear 7 characters
+  lcd.setCursor(9, 1);
+  if (dt.length() > 0) {
+    lcd.print(dt.substring(0, 7)); // Show only first 7 chars to fit
+  }
 }
 
 void lcdShowBerat(String berat) {
@@ -92,5 +97,30 @@ void lcdShowSyncTime(String status) {
   lcd.print("Sync Waktu:");
   lcd.setCursor(0, 1);
   lcd.print(status.substring(0, 16));
+}
+
+void lcdClearFirebaseLine() {
+  lcd.setCursor(0, 1);
+  lcd.print("                "); // Clear entire line 2
+}
+
+void lcdShowQuality(String quality) {
+  lcd.setCursor(0, 1);
+  lcd.print("Quality:");
+  lcd.setCursor(9, 1);
+  // Clear the rest of the line first
+  lcd.print("       "); // Clear 7 characters
+  lcd.setCursor(9, 1);
+  if (quality.length() > 0) {
+    lcd.print(quality.substring(0, 7)); // Show only first 7 chars to fit
+  }
+}
+
+void lcdShowLogoutInstructions() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Tap RFID lagi");
+  lcd.setCursor(0, 1);
+  lcd.print("untuk logout");
 }
 

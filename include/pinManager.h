@@ -16,9 +16,9 @@
 #define TARE_BUTTON_PIN  32  // Tombol Tare (GPIO 32)
 
 // ==== RGB LED (Common Cathode) ====
-#define LED_PIN_R      16 // Pin Merah
-#define LED_PIN_G    4 // Pin Hijau
-#define LED_PIN_B     2 // Pin Biru
+#define LED_PIN_R      4 // Pin Merah
+#define LED_PIN_G    2 // Pin Hijau
+#define LED_PIN_B     16 // Pin Biru
 
 // ==== BUZZER ====
 #define BUZZER_PIN       17 // Pin Buzzer

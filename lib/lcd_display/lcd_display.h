@@ -14,3 +14,6 @@ void lcdShowFirebase(String status); // fungsi untuk menampilkan status Firebase
 void lcdShowSyncTime(String status); // fungsi untuk menampilkan status sinkronisasi waktu
 void lcdShowInit(String msg); // fungsi untuk menampilkan pesan inisialisasi
 void lcdClear();
+void lcdClearFirebaseLine(); // fungsi untuk membersihkan baris Firebase saja
+void lcdShowQuality(String quality); // fungsi untuk menampilkan quality timbangan
+void lcdShowLogoutInstructions(); // fungsi untuk menampilkan instruksi logout

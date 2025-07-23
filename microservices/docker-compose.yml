@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  service-registry:
+    build: ./service-registry
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+    networks:
+      - iot-network
+    restart: unless-stopped
+
+  api-server:
+    build: ./api-server
+    ports:
+      - "3000:3000"
+      - "3002:3002"  # WebSocket port
+    environment:
+      - NODE_ENV=production
+      - REGISTRY_URL=http://service-registry:3001
+    depends_on:
+      - service-registry
+    networks:
+      - iot-network
+    restart: unless-stopped
+
+  static-server:
+    build: ./static-server
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - REGISTRY_URL=http://service-registry:3001
+      - API_SERVER_URL=http://api-server:3000
+    depends_on:
+      - service-registry
+      - api-server
+    networks:
+      - iot-network
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - api-server
+      - static-server
+    networks:
+      - iot-network
+    restart: unless-stopped
+
+networks:
+  iot-network:
+    driver: bridge

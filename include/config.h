@@ -71,3 +71,10 @@
 #define BUZZ_WAITING 200        // Long beep for waiting stable
 #define BUZZ_SUCCESS 300        // Success confirmation
 #define BUZZ_ERROR 500          // Error alert
+
+// Session Configuration
+#define SESSION_TIMEOUT_MS 300000  // Auto logout after 5 minutes of inactivity
+#define SESSION_ACTIVE_LED COLOR_GREEN  // LED color when session is active
+#define SESSION_INACTIVE_LED COLOR_RED  // LED color when session is inactive
+#define SESSION_LOGIN_SOUND BUZZ_SUCCESS  // Sound when logging in
+#define SESSION_LOGOUT_SOUND BUZZ_ERROR  // Sound when logging out

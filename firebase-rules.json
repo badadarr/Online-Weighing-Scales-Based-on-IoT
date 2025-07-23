@@ -1,0 +1,80 @@
+{
+  "rules": {
+    "authorized_users": {
+      ".read": "auth != null || query.orderByChild == 'device_access'",
+      ".write": "auth != null && (auth.token.admin == true || auth.uid != null)",
+      "$uid": {
+        ".read": "auth != null || query.orderByChild == 'device_access'",
+        ".write": "auth != null"
+      }
+    },
+    "rfid_users": {
+      ".read": "auth != null || query.orderByChild == 'device_access'",
+      ".write": "auth != null && (auth.token.admin == true || auth.uid != null)",
+      "$uid": {
+        ".read": "auth != null || query.orderByChild == 'device_access'", 
+        ".write": "auth != null"
+      }
+    },
+    "rfid_requests": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "authorization_requests": {
+      ".read": "auth != null", 
+      ".write": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "device_users": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$device_id": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "users": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "authorized": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
+    },
+    "devices": {
+      "$device": {
+        "berat_terakhir": {
+          ".read": true,
+          ".write": true
+        },
+        "log": {
+          ".read": true, 
+          ".write": true
+        },
+        "current": {
+          ".read": true,
+          ".write": true,
+          ".validate": "newData.hasChildren(['weight', 'timestamp', 'device_id'])"
+        },
+        "history": {
+          "$timestamp": {
+            ".read": true,
+            ".write": true,
+            ".validate": "newData.hasChildren(['weight', 'timestamp', 'device_id'])"
+          }
+        }
+      }
+    }
+  }
+}
