@@ -4,7 +4,6 @@
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <EEPROM.h>
-#include <HTTPClient.h>
 #include "config.h"
 #include "SensorReader.h"
 #include "SessionManager.h"
@@ -12,11 +11,8 @@
 class TimbangangMicroserviceClient {
 private:
   AsyncWebServer* server;
-  HTTPClient http;
   
-  // Microservice URLs
-  String API_SERVER_URL;
-  String STATIC_SERVER_URL;
+  // Configuration URLs
   String LOAD_BALANCER_URL;
   
   // Local data cache
@@ -31,31 +27,15 @@ private:
   bool sessionActive;
   String sessionUserUID;
   unsigned long sessionStartTime;
-  
-  // Connection status
-  bool apiConnected;
-  unsigned long reconnectTimer;
 
 public:
   TimbangangMicroserviceClient();
   void init();
   void begin();
   void handleClient();
-  void loop(); // For WebSocket and connection management
+  void loop();
   
-  // Microservice communication
-  bool sendWeightData(WeightData data);
-  bool updateConfiguration(bool baseMode, float baseWeight);
-  bool sendCalibrationRequest(float weight);
-  bool sendTareRequest();
-  bool sendResetRequest();
-  bool sendSessionStart(String userUID);
-  bool sendSessionEnd();
-  
-  // Connection management
-  void reconnectServices();
-  
-  // Configuration methods (keep for backward compatibility)
+  // Configuration methods
   void setBaseMode(bool mode);
   void setBaseWeight(float weight);
   void updateWeightData(WeightData data);
@@ -72,9 +52,8 @@ public:
   WeightData getLastWeightData() { return lastWeightData; }
   bool getSessionActive() { return sessionActive; }
   String getSessionUserUID() { return sessionUserUID; }
-  bool isConnectedToServices() { return apiConnected; }
   
-  // Local web server endpoints (for local configuration)
+  // Local web server endpoints
   String getStatusJSON();
   String getConfigJSON();
   String getMainPageHTML();
@@ -84,4 +63,7 @@ public:
   void loadConfiguration();
   void saveConfiguration();
   void finishBaseCalibration(float currentWeight);
+  
+  // RFID user management
+  bool addRFIDUserToFirebase(String uid, String name, String email);
 };

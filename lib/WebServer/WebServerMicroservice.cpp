@@ -7,6 +7,7 @@
 #include "SessionManager.h"
 #include "RFIDReader.h"
 #include <EEPROM.h>
+#include <Firebase_ESP_Client.h>
 
 TimbangangMicroserviceClient webMicroservice;
 
@@ -15,8 +16,6 @@ TimbangangMicroserviceClient::TimbangangMicroserviceClient() {
   
   // Default microservice URLs (can be configured)
   LOAD_BALANCER_URL = "http://192.168.1.100"; // Change to your server IP
-  API_SERVER_URL = LOAD_BALANCER_URL + "/api";
-  STATIC_SERVER_URL = LOAD_BALANCER_URL;
   
   // Initialize local cache
   baseMode = DEFAULT_BASE_MODE;
@@ -30,10 +29,6 @@ TimbangangMicroserviceClient::TimbangangMicroserviceClient() {
   sessionActive = false;
   sessionUserUID = "";
   sessionStartTime = 0;
-  
-  // Connection status
-  apiConnected = false;
-  reconnectTimer = 0;
 }
 
 void TimbangangMicroserviceClient::init() {
@@ -75,16 +70,11 @@ void TimbangangMicroserviceClient::init() {
       }
       if (doc.containsKey("serverURL")) {
         LOAD_BALANCER_URL = doc["serverURL"].as<String>();
-        API_SERVER_URL = LOAD_BALANCER_URL + "/api";
-        STATIC_SERVER_URL = LOAD_BALANCER_URL;
         configChanged = true;
       }
       
       if (configChanged) {
         saveConfiguration();
-        
-        // Also send to microservice if connected
-        updateConfiguration(baseMode, baseWeight);
       }
       
       request->send(200, "application/json", 
@@ -107,53 +97,31 @@ void TimbangangMicroserviceClient::init() {
       return;
     }
     
-    // Send to microservice first
-    bool success = sendCalibrationRequest(currentWeight);
+    // Do local calibration
+    finishBaseCalibration(currentWeight);
+    setBaseMode(true);
     
-    if (success || !apiConnected) {
-      // If microservice successful or not connected, do local calibration
-      finishBaseCalibration(currentWeight);
-      setBaseMode(true);
-      
-      Serial.println("[WEB] Calibration: " + String(currentWeight, 3) + " kg -> " + String(baseWeight, 3) + " kg");
-      
-      request->send(200, "application/json", 
-        "{\"status\":\"success\",\"baseWeight\":" + String(baseWeight, WEIGHT_PRECISION) + 
-        ",\"message\":\"Base calibrated successfully\"}");
-    } else {
-      request->send(500, "application/json", 
-        "{\"status\":\"error\",\"message\":\"Failed to communicate with server\"}");
-    }
+    Serial.println("[WEB] Calibration: " + String(currentWeight, 3) + " kg -> " + String(baseWeight, 3) + " kg");
+    
+    request->send(200, "application/json", 
+      "{\"status\":\"success\",\"baseWeight\":" + String(baseWeight, WEIGHT_PRECISION) + 
+      ",\"message\":\"Base calibrated successfully\"}");
   });
   
   // Tare endpoint
   server->on("/api/tare", HTTP_POST, [this](AsyncWebServerRequest *request) {
-    bool success = sendTareRequest();
-    
-    if (success || !apiConnected) {
-      extern bool webTareRequested;
-      webTareRequested = true;
-      request->send(200, "application/json", 
-        "{\"status\":\"success\",\"message\":\"Tare requested\"}");
-    } else {
-      request->send(500, "application/json", 
-        "{\"status\":\"error\",\"message\":\"Failed to communicate with server\"}");
-    }
+    extern bool webTareRequested;
+    webTareRequested = true;
+    request->send(200, "application/json", 
+      "{\"status\":\"success\",\"message\":\"Tare requested\"}");
   });
   
   // Reset endpoint
   server->on("/api/reset", HTTP_POST, [this](AsyncWebServerRequest *request) {
-    bool success = sendResetRequest();
-    
-    if (success || !apiConnected) {
-      baseMode = DEFAULT_BASE_MODE;
-      baseWeight = DEFAULT_BASE_WEIGHT;
-      saveConfiguration();
-      request->send(200, "application/json", "{\"status\":\"success\"}");
-    } else {
-      request->send(500, "application/json", 
-        "{\"status\":\"error\",\"message\":\"Failed to communicate with server\"}");
-    }
+    baseMode = DEFAULT_BASE_MODE;
+    baseWeight = DEFAULT_BASE_WEIGHT;
+    saveConfiguration();
+    request->send(200, "application/json", "{\"status\":\"success\"}");
   });
   
   // RFID data collection endpoint
@@ -170,6 +138,33 @@ void TimbangangMicroserviceClient::init() {
     }
   });
   
+  // Add RFID user endpoint
+  server->on("/api/add-rfid-user", HTTP_POST, [this](AsyncWebServerRequest *request) {},
+    NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+      String body = String((char*)data).substring(0, len);
+      DynamicJsonDocument doc(512);
+      deserializeJson(doc, body);
+      
+      String uid = doc["uid"].as<String>();
+      String name = doc["name"].as<String>();
+      String email = doc["email"].as<String>();
+      
+      if (uid.length() == 0 || name.length() == 0) {
+        request->send(400, "application/json", 
+          "{\"status\":\"error\",\"message\":\"UID and name are required\"}");
+        return;
+      }
+      
+      // Add to Firebase
+      if (addRFIDUserToFirebase(uid, name, email)) {
+        request->send(200, "application/json", 
+          "{\"status\":\"success\",\"message\":\"RFID user added successfully\"}");
+      } else {
+        request->send(500, "application/json", 
+          "{\"status\":\"error\",\"message\":\"Failed to add RFID user\"}");
+      }
+    });
+  
   server->onNotFound([this](AsyncWebServerRequest *request) {
     request->send(404, "text/html", "Not Found");
   });
@@ -182,221 +177,16 @@ void TimbangangMicroserviceClient::begin() {
   server->begin();
   Serial.println("[WEB] Local web server started on port " + String(WEB_SERVER_PORT));
   Serial.println("[WEB] Local access: http://" + WiFi.localIP().toString());
-  
-  // Try initial API connection
-  reconnectServices();
 }
 
 void TimbangangMicroserviceClient::loop() {
-  unsigned long now = millis();
-  
-  // Reconnection logic (simplified - no WebSocket)
-  if (!apiConnected && (now - reconnectTimer > 30000)) { // Try reconnect every 30s
-    reconnectServices();
-    reconnectTimer = now;
-  }
+  // AsyncWebServer handles clients automatically
+  // This method kept for compatibility
 }
 
 void TimbangangMicroserviceClient::handleClient() {
   // AsyncWebServer handles clients automatically
   // This method kept for compatibility
-}
-
-bool TimbangangMicroserviceClient::sendWeightData(WeightData data) {
-  if (!apiConnected) return false;
-  
-  http.begin(API_SERVER_URL + "/weight-data");
-  http.addHeader("Content-Type", "application/json");
-  
-  DynamicJsonDocument doc(512);
-  doc["raw"] = data.raw;
-  doc["filtered"] = data.filtered;
-  doc["final"] = finalWeight; // Send final weight after base correction
-  doc["isStable"] = data.isStable;
-  doc["isCalibrated"] = baseMode;
-  doc["status"] = stabilizationStatus;
-  doc["deviceId"] = WiFi.macAddress();
-  doc["timestamp"] = millis();
-  
-  String payload;
-  serializeJson(doc, payload);
-  
-  int httpCode = http.POST(payload);
-  bool success = (httpCode == 200);
-  
-  if (success) {
-    Serial.println("[API] Weight data sent successfully");
-  } else {
-    Serial.println("[API] Failed to send weight data: " + String(httpCode));
-    apiConnected = false;
-  }
-  
-  http.end();
-  return success;
-}
-
-bool TimbangangMicroserviceClient::updateConfiguration(bool bMode, float bWeight) {
-  if (!apiConnected) return false;
-  
-  http.begin(API_SERVER_URL + "/config");
-  http.addHeader("Content-Type", "application/json");
-  
-  DynamicJsonDocument doc(256);
-  doc["baseMode"] = bMode;
-  doc["baseWeight"] = bWeight;
-  doc["deviceId"] = WiFi.macAddress();
-  
-  String payload;
-  serializeJson(doc, payload);
-  
-  int httpCode = http.POST(payload);
-  bool success = (httpCode == 200);
-  
-  if (!success) {
-    apiConnected = false;
-  }
-  
-  http.end();
-  return success;
-}
-
-bool TimbangangMicroserviceClient::sendCalibrationRequest(float weight) {
-  if (!apiConnected) return false;
-  
-  http.begin(API_SERVER_URL + "/calibrate");
-  http.addHeader("Content-Type", "application/json");
-  
-  DynamicJsonDocument doc(256);
-  doc["weight"] = weight;
-  doc["deviceId"] = WiFi.macAddress();
-  
-  String payload;
-  serializeJson(doc, payload);
-  
-  int httpCode = http.POST(payload);
-  bool success = (httpCode == 200);
-  
-  if (!success) {
-    apiConnected = false;
-  }
-  
-  http.end();
-  return success;
-}
-
-bool TimbangangMicroserviceClient::sendTareRequest() {
-  if (!apiConnected) return false;
-  
-  http.begin(API_SERVER_URL + "/tare");
-  http.addHeader("Content-Type", "application/json");
-  
-  DynamicJsonDocument doc(128);
-  doc["deviceId"] = WiFi.macAddress();
-  
-  String payload;
-  serializeJson(doc, payload);
-  
-  int httpCode = http.POST(payload);
-  bool success = (httpCode == 200);
-  
-  if (!success) {
-    apiConnected = false;
-  }
-  
-  http.end();
-  return success;
-}
-
-bool TimbangangMicroserviceClient::sendResetRequest() {
-  if (!apiConnected) return false;
-  
-  http.begin(API_SERVER_URL + "/reset");
-  http.addHeader("Content-Type", "application/json");
-  
-  DynamicJsonDocument doc(128);
-  doc["deviceId"] = WiFi.macAddress();
-  
-  String payload;
-  serializeJson(doc, payload);
-  
-  int httpCode = http.POST(payload);
-  bool success = (httpCode == 200);
-  
-  if (!success) {
-    apiConnected = false;
-  }
-  
-  http.end();
-  return success;
-}
-
-bool TimbangangMicroserviceClient::sendSessionStart(String userUID) {
-  if (!apiConnected) return false;
-  
-  http.begin(API_SERVER_URL + "/session/start");
-  http.addHeader("Content-Type", "application/json");
-  
-  DynamicJsonDocument doc(256);
-  doc["userUID"] = userUID;
-  doc["deviceId"] = WiFi.macAddress();
-  
-  String payload;
-  serializeJson(doc, payload);
-  
-  int httpCode = http.POST(payload);
-  bool success = (httpCode == 200);
-  
-  if (success) {
-    setSessionStatus(true, userUID);
-  } else {
-    apiConnected = false;
-  }
-  
-  http.end();
-  return success;
-}
-
-bool TimbangangMicroserviceClient::sendSessionEnd() {
-  if (!apiConnected) return false;
-  
-  http.begin(API_SERVER_URL + "/session/end");
-  http.addHeader("Content-Type", "application/json");
-  
-  DynamicJsonDocument doc(128);
-  doc["deviceId"] = WiFi.macAddress();
-  
-  String payload;
-  serializeJson(doc, payload);
-  
-  int httpCode = http.POST(payload);
-  bool success = (httpCode == 200);
-  
-  if (success) {
-    setSessionStatus(false);
-  } else {
-    apiConnected = false;
-  }
-  
-  http.end();
-  return success;
-}
-
-void TimbangangMicroserviceClient::reconnectServices() {
-  Serial.println("[API] Attempting to reconnect to services...");
-  
-  // Test API connection
-  http.begin(API_SERVER_URL + "/status");
-  int httpCode = http.GET();
-  
-  if (httpCode == 200) {
-    apiConnected = true;
-    Serial.println("[API] Reconnected to API server");
-  } else {
-    apiConnected = false;
-    Serial.println("[API] Failed to reconnect to API server");
-  }
-  
-  http.end();
 }
 
 // Implementation of setter methods (same as original WebServer.cpp)
@@ -416,11 +206,6 @@ void TimbangangMicroserviceClient::updateWeightData(WeightData data) {
     finalWeight = max(0.0f, data.filtered - baseWeight);
   } else {
     finalWeight = data.filtered;
-  }
-  
-  // Send to microservice if connected
-  if (apiConnected) {
-    sendWeightData(data);
   }
 }
 
@@ -476,7 +261,6 @@ String TimbangangMicroserviceClient::getStatusJSON() {
   doc["authorizedUser"] = authorizedUser;
   doc["rfidDataCached"] = rfidDataCached;
   doc["cachedUsers"] = cachedUsers;
-  doc["apiConnected"] = apiConnected;
   doc["serverURL"] = LOAD_BALANCER_URL;
   
   String output;
@@ -489,7 +273,6 @@ String TimbangangMicroserviceClient::getConfigJSON() {
   doc["baseMode"] = baseMode;
   doc["baseWeight"] = baseWeight;
   doc["serverURL"] = LOAD_BALANCER_URL;
-  doc["apiConnected"] = apiConnected;
   
   String output;
   serializeJson(doc, output);
@@ -498,11 +281,11 @@ String TimbangangMicroserviceClient::getConfigJSON() {
 
 // HTML pages (minimal versions to save flash memory)
 String TimbangangMicroserviceClient::getMainPageHTML() {
-  return R"HTML(<!DOCTYPE html><html><head><title>IoT Scale</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:Arial;margin:20px;text-align:center}.container{max-width:400px;margin:0 auto;padding:20px;border:1px solid #ddd;border-radius:10px}.weight{font-size:24px;font-weight:bold;color:#333;margin:10px 0}.access-status{padding:10px;margin:10px 0;border-radius:5px}.access-granted{background:#d4edda;color:#155724;border:1px solid #c3e6cb}.access-denied{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}.rfid-status{padding:8px;margin:5px 0;border-radius:5px;font-size:12px}.rfid-cached{background:#e2f3ff;color:#0066cc;border:1px solid #b3d9ff}.rfid-loading{background:#fff3cd;color:#856404;border:1px solid #ffeaa7}.btn{background:#007bff;color:white;padding:10px 20px;border:none;border-radius:5px;margin:5px;cursor:pointer;display:block;width:90%}.btn:hover{background:#0056b3}</style></head><body><div class="container"><h1>IoT Scale</h1><div class="weight" id="weight">Loading...</div><div>Status: <span id="status">Connecting...</span></div><div id="access-status" class="access-status"></div><div id="rfid-status" class="rfid-status"></div><div>Server: <span>)HTML" + LOAD_BALANCER_URL + R"HTML(</span></div><button class="btn" onclick="location='/config'">Config</button><button class="btn" onclick="window.open(')HTML" + LOAD_BALANCER_URL + R"HTML(')">Dashboard</button></div><script>function update(){fetch('/api/status').then(r=>r.json()).then(d=>{document.getElementById('weight').textContent=d.weight.toFixed(3)+' kg';document.getElementById('status').textContent=d.apiConnected?'Connected':'Local';const accessDiv=document.getElementById('access-status');if(d.accessGranted){accessDiv.className='access-status access-granted';accessDiv.innerHTML='Access Granted<br>User: '+d.authorizedUser}else{accessDiv.className='access-status access-denied';accessDiv.innerHTML='Tap RFID for Access'}const rfidDiv=document.getElementById('rfid-status');if(d.rfidDataCached){rfidDiv.className='rfid-status rfid-cached';rfidDiv.innerHTML='📋 RFID Data: '+d.cachedUsers+' users cached'}else{rfidDiv.className='rfid-status rfid-loading';rfidDiv.innerHTML='⏳ Loading RFID data...'}}).catch(e=>console.error(e))}update();setInterval(update,3000)</script></body></html>)HTML";
+  return R"HTML(<!DOCTYPE html><html><head><title>IoT Scale</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:Arial;margin:20px;text-align:center}.container{max-width:400px;margin:0 auto;padding:20px;border:1px solid #ddd;border-radius:10px}.weight{font-size:24px;font-weight:bold;color:#333;margin:10px 0}.access-status{padding:10px;margin:10px 0;border-radius:5px}.access-granted{background:#d4edda;color:#155724;border:1px solid #c3e6cb}.access-denied{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}.rfid-status{padding:8px;margin:5px 0;border-radius:5px;font-size:12px}.rfid-cached{background:#e2f3ff;color:#0066cc;border:1px solid #b3d9ff}.rfid-loading{background:#fff3cd;color:#856404;border:1px solid #ffeaa7}.btn{background:#007bff;color:white;padding:10px 20px;border:none;border-radius:5px;margin:5px;cursor:pointer;display:block;width:90%}.btn:hover{background:#0056b3}</style></head><body><div class="container"><h1>IoT Scale</h1><div class="weight" id="weight">Loading...</div><div>Status: <span id="status">Ready</span></div><div id="access-status" class="access-status"></div><div id="rfid-status" class="rfid-status"></div><button class="btn" onclick="location='/config'">Config</button></div><script>function update(){fetch('/api/status').then(r=>r.json()).then(d=>{document.getElementById('weight').textContent=d.weight.toFixed(3)+' kg';document.getElementById('status').textContent='Ready';const accessDiv=document.getElementById('access-status');if(d.accessGranted){accessDiv.className='access-status access-granted';accessDiv.innerHTML='Access Granted<br>User: '+d.authorizedUser}else{accessDiv.className='access-status access-denied';accessDiv.innerHTML='Tap RFID for Access'}const rfidDiv=document.getElementById('rfid-status');if(d.rfidDataCached){rfidDiv.className='rfid-status rfid-cached';rfidDiv.innerHTML='📋 RFID Data: '+d.cachedUsers+' users cached'}else{rfidDiv.className='rfid-status rfid-loading';rfidDiv.innerHTML='⏳ Loading RFID data...'}}).catch(e=>console.error(e))}update();setInterval(update,3000)</script></body></html>)HTML";
 }
 
 String TimbangangMicroserviceClient::getConfigPageHTML() {
-  return R"HTML(<!DOCTYPE html><html><head><title>Config</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:Arial;margin:20px}.form-group{margin:15px 0}label{display:block;margin-bottom:5px;font-weight:bold}input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px}.btn{background:#007bff;color:white;padding:10px 20px;border:none;border-radius:5px;margin:5px;cursor:pointer}.btn-danger{background:#dc3545}.btn-success{background:#28a745}</style></head><body><h1>Config</h1><div class="form-group"><label>Server URL:</label><input type="text" id="serverURL" placeholder="http://192.168.1.100"></div><div class="form-group"><label><input type="checkbox" id="baseMode"> Base Weight Mode</label></div><div class="form-group"><label>Base Weight (kg):</label><input type="number" id="baseWeight" step="0.001" placeholder="0.000"></div><button class="btn" onclick="save()">Save</button><button class="btn" onclick="cal()">Calibrate</button><button class="btn btn-success" onclick="syncRFID()">Sync RFID Data</button><button class="btn btn-danger" onclick="reset()">Reset</button><button class="btn" onclick="location='/'">Back</button><script>function load(){fetch('/api/config').then(r=>r.json()).then(d=>{document.getElementById('baseMode').checked=d.baseMode;document.getElementById('baseWeight').value=d.baseWeight;document.getElementById('serverURL').value=d.serverURL})}function save(){const c={baseMode:document.getElementById('baseMode').checked,baseWeight:parseFloat(document.getElementById('baseWeight').value)||0,serverURL:document.getElementById('serverURL').value};fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)}).then(r=>r.json()).then(d=>alert(d.message)).catch(e=>alert('Error:'+e))}function cal(){if(!confirm('Place base on scale. Continue?'))return;fetch('/api/calibrate',{method:'POST'}).then(r=>r.json()).then(d=>alert(d.message)).catch(e=>alert('Error:'+e))}function syncRFID(){if(!confirm('Sync RFID data from Firebase?'))return;fetch('/api/rfid-sync',{method:'POST'}).then(r=>r.json()).then(d=>alert(d.message+(d.cachedUsers?' - Users: '+d.cachedUsers:''))).catch(e=>alert('Error:'+e))}function reset(){if(!confirm('Reset config?'))return;fetch('/api/reset',{method:'POST'}).then(r=>r.json()).then(d=>{alert('Reset complete');load()}).catch(e=>alert('Error:'+e))}load()</script></body></html>)HTML";
+  return R"HTML(<!DOCTYPE html><html><head><title>Config</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:Arial;margin:20px}.form-group{margin:15px 0}label{display:block;margin-bottom:5px;font-weight:bold}input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px}.btn{background:#007bff;color:white;padding:10px 20px;border:none;border-radius:5px;margin:5px;cursor:pointer}.btn-danger{background:#dc3545}.btn-success{background:#28a745}.section{border:1px solid #ddd;padding:15px;margin:10px 0;border-radius:5px}h3{margin-top:0}</style></head><body><h1>Config</h1><div class="section"><h3>Server Configuration</h3><div class="form-group"><label>Server URL:</label><input type="text" id="serverURL" placeholder="http://192.168.1.100"></div><div class="form-group"><label><input type="checkbox" id="baseMode"> Base Weight Mode</label></div><div class="form-group"><label>Base Weight (kg):</label><input type="number" id="baseWeight" step="0.001" placeholder="0.000"></div><button class="btn" onclick="save()">Save Config</button></div><div class="section"><h3>RFID User Management</h3><div class="form-group"><label>RFID UID:</label><input type="text" id="rfidUID" placeholder="A1B2C3D4" maxlength="8"></div><div class="form-group"><label>User Name:</label><input type="text" id="userName" placeholder="John Doe"></div><div class="form-group"><label>Email (optional):</label><input type="email" id="userEmail" placeholder="john@example.com"></div><button class="btn btn-success" onclick="addRFIDUser()">Add RFID User</button></div><div class="section"><h3>System Operations</h3><button class="btn" onclick="cal()">Calibrate</button><button class="btn btn-success" onclick="syncRFID()">Sync RFID Data</button><button class="btn btn-danger" onclick="reset()">Reset</button></div><button class="btn" onclick="location='/'">Back</button><script>function load(){fetch('/api/config').then(r=>r.json()).then(d=>{document.getElementById('baseMode').checked=d.baseMode;document.getElementById('baseWeight').value=d.baseWeight;document.getElementById('serverURL').value=d.serverURL})}function save(){const c={baseMode:document.getElementById('baseMode').checked,baseWeight:parseFloat(document.getElementById('baseWeight').value)||0,serverURL:document.getElementById('serverURL').value};fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)}).then(r=>r.json()).then(d=>alert(d.message)).catch(e=>alert('Error:'+e))}function addRFIDUser(){const uid=document.getElementById('rfidUID').value.trim();const name=document.getElementById('userName').value.trim();const email=document.getElementById('userEmail').value.trim();if(!uid||!name){alert('UID and Name are required');return}const userData={uid:uid,name:name,email:email};fetch('/api/add-rfid-user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(userData)}).then(r=>r.json()).then(d=>{alert(d.message);if(d.status==='success'){document.getElementById('rfidUID').value='';document.getElementById('userName').value='';document.getElementById('userEmail').value=''}}).catch(e=>alert('Error:'+e))}function cal(){if(!confirm('Place base on scale. Continue?'))return;fetch('/api/calibrate',{method:'POST'}).then(r=>r.json()).then(d=>alert(d.message)).catch(e=>alert('Error:'+e))}function syncRFID(){if(!confirm('Sync RFID data from Firebase?'))return;fetch('/api/rfid-sync',{method:'POST'}).then(r=>r.json()).then(d=>alert(d.message+(d.cachedUsers?' - Users: '+d.cachedUsers:''))).catch(e=>alert('Error:'+e))}function reset(){if(!confirm('Reset config?'))return;fetch('/api/reset',{method:'POST'}).then(r=>r.json()).then(d=>{alert('Reset complete');load()}).catch(e=>alert('Error:'+e))}load()</script></body></html>)HTML";
 }
 
 // Configuration persistence methods (same as original)
@@ -541,5 +324,47 @@ void TimbangangMicroserviceClient::finishBaseCalibration(float currentWeight) {
     saveConfiguration();
     
     Serial.println("[CALIBRATION] Base calibrated: " + String(baseWeight, 3) + " kg");
+  }
+}
+
+bool TimbangangMicroserviceClient::addRFIDUserToFirebase(String uid, String name, String email) {
+  extern FirebaseData fbdo;
+  
+  if (!Firebase.ready()) {
+    Serial.println("[FIREBASE] Firebase not ready");
+    return false;
+  }
+  
+  // Create user data
+  FirebaseJson json;
+  json.set("uid", uid);
+  json.set("name", name);
+  json.set("email", email);
+  json.set("active", true);
+  json.set("created_at", String(millis()));
+  
+  // Use sanitized name as key
+  String sanitizedName = name;
+  sanitizedName.replace(" ", "_");
+  sanitizedName.replace(".", "_");
+  sanitizedName.toLowerCase();
+  String userKey = sanitizedName + "_" + String(millis() % 10000);
+  
+  String path = "/rfid_users/" + userKey;
+  
+  if (Firebase.RTDB.setJSON(&fbdo, path.c_str(), &json)) {
+    // Also add to authorized_users for backward compatibility
+    FirebaseJson authJson;
+    authJson.set("name", name);
+    authJson.set("authorized", true);
+    
+    String authPath = "/authorized_users/" + uid;
+    Firebase.RTDB.setJSON(&fbdo, authPath.c_str(), &authJson);
+    
+    Serial.println("[FIREBASE] RFID user added: " + uid + " -> " + name);
+    return true;
+  } else {
+    Serial.println("[FIREBASE] Failed to add RFID user: " + fbdo.errorReason());
+    return false;
   }
 }
