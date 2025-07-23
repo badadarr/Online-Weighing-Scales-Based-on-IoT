@@ -238,9 +238,9 @@ void TimbangangMicroserviceClient::init() {
 
   // Get RFID users endpoint
   server->on("/api/rfid/users", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    // Return a simple success response with empty users array for now
-    // This will be properly implemented when RFIDReader is accessible
-    request->send(200, "application/json", "{\"success\":true,\"users\":[]}");
+    // Get users from Firebase authorized_users
+    String usersJson = getAuthorizedUsersFromFirebase();
+    request->send(200, "application/json", usersJson);
   });
 
   // Add RFID user endpoint (new format for the improved UI)
@@ -523,10 +523,83 @@ bool TimbangangMicroserviceClient::addRFIDUserToFirebase(String uid, String name
   }
 }
 
+String TimbangangMicroserviceClient::getAuthorizedUsersFromFirebase() {
+  extern FirebaseData fbdo;
+  
+  if (!Firebase.ready()) {
+    Serial.println("[FIREBASE] Firebase not ready for user fetch");
+    return "{\"success\":false,\"message\":\"Firebase not ready\",\"users\":[]}";
+  }
+  
+  // Get all users from authorized_users path
+  if (Firebase.RTDB.getJSON(&fbdo, "/authorized_users")) {
+    FirebaseJson &json = fbdo.jsonObject();
+    
+    // Create response JSON
+    DynamicJsonDocument responseDoc(2048);
+    responseDoc["success"] = true;
+    JsonArray usersArray = responseDoc.createNestedArray("users");
+    
+    // Parse the Firebase JSON response
+    size_t len = json.iteratorBegin();
+    String key, value;
+    int type = 0;
+    
+    for (size_t i = 0; i < len; i++) {
+      json.iteratorGet(i, type, key, value);
+      
+      if (type == FirebaseJson::JSON_OBJECT) {
+        // Parse individual user data
+        FirebaseJson userJson;
+        userJson.setJsonData(value);
+        
+        String userName = "";
+        bool authorized = false;
+        
+        if (userJson.get(fbdo, "name")) {
+          userName = fbdo.stringData();
+        }
+        if (userJson.get(fbdo, "authorized")) {
+          authorized = fbdo.boolData();
+        }
+        
+        // Only include authorized users
+        if (authorized && userName.length() > 0) {
+          JsonObject userObj = usersArray.createNestedObject();
+          userObj["uid"] = key;
+          userObj["name"] = userName;
+          userObj["authorized"] = authorized;
+        }
+      }
+    }
+    json.iteratorEnd();
+    
+    String output;
+    serializeJson(responseDoc, output);
+    
+    Serial.println("[FIREBASE] Retrieved " + String(usersArray.size()) + " authorized users");
+    return output;
+    
+  } else {
+    Serial.println("[FIREBASE] Failed to get users: " + fbdo.errorReason());
+    return "{\"success\":false,\"message\":\"Failed to fetch users\",\"users\":[]}";
+  }
+}
+
 // RFID data access methods implementation
 String TimbangangMicroserviceClient::getCurrentAuthorizedUser() {
   if (sessionActive && !sessionUserUID.isEmpty()) {
-    // Try to get user UID from session manager
+    // Get user name from Firebase based on UID
+    extern FirebaseData fbdo;
+    
+    if (Firebase.ready()) {
+      String path = "/authorized_users/" + sessionUserUID + "/name";
+      if (Firebase.RTDB.getString(&fbdo, path.c_str())) {
+        return fbdo.stringData();
+      }
+    }
+    
+    // Fallback to UID if name not found
     extern SessionManager sessionManager;
     return sessionManager.getCurrentUserUID();
   }
@@ -538,13 +611,25 @@ bool TimbangangMicroserviceClient::isWeighingAccessGranted() {
 }
 
 bool TimbangangMicroserviceClient::isRFIDUsersDataCached() {
-  // For now, assume data is cached if we have any stored UIDs
+  // Check if we have any users in Firebase
   return getCachedUsersCount() > 0;
 }
 
 int TimbangangMicroserviceClient::getCachedUsersCount() {
-  // This would normally get the count from RFIDReader or LocalStorage
-  // For now, return a placeholder value
+  extern FirebaseData fbdo;
+  
+  if (!Firebase.ready()) {
+    return 0;
+  }
+  
+  // Get count from Firebase authorized_users
+  if (Firebase.RTDB.getJSON(&fbdo, "/authorized_users")) {
+    FirebaseJson &json = fbdo.jsonObject();
+    size_t len = json.iteratorBegin();
+    json.iteratorEnd();
+    return len;
+  }
+  
   return 0;
 }
 

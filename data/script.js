@@ -101,6 +101,35 @@ function updateScaleConfigStatus(data) {
         scaleReadyElement.textContent = data.systemReady ? 'Ready' : 'Not Ready';
         scaleReadyElement.style.color = data.systemReady ? '#28a745' : '#dc3545';
     }
+    
+    // Update user access information
+    updateUserAccessStatus(data);
+}
+
+function updateUserAccessStatus(data) {
+    const currentUserElement = document.getElementById('currentUserName');
+    const sessionStatusElement = document.getElementById('sessionStatus');
+    const totalUsersElement = document.getElementById('totalUsers');
+    
+    if (currentUserElement) {
+        if (data.accessGranted && data.authorizedUser) {
+            currentUserElement.textContent = data.authorizedUser;
+            currentUserElement.style.color = '#28a745';
+        } else {
+            currentUserElement.textContent = 'None';
+            currentUserElement.style.color = '#6c757d';
+        }
+    }
+    
+    if (sessionStatusElement) {
+        sessionStatusElement.textContent = data.accessGranted ? 'Active' : 'Inactive';
+        sessionStatusElement.style.color = data.accessGranted ? '#28a745' : '#dc3545';
+    }
+    
+    if (totalUsersElement) {
+        totalUsersElement.textContent = data.cachedUsers || '0';
+        totalUsersElement.style.color = '#007bff';
+    }
 }
 
 function quickTare() {

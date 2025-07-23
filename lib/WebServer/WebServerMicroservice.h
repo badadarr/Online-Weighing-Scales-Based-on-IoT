@@ -71,6 +71,7 @@ public:
   
   // RFID user management
   bool addRFIDUserToFirebase(String uid, String name, String email);
+  String getAuthorizedUsersFromFirebase();
   
   // RFID data access methods
   String getCurrentAuthorizedUser();
