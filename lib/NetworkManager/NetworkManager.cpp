@@ -3,27 +3,43 @@
 #include <WiFi.h>
 #include "config.h"
 #include "NetworkManager.h"
+#include "WiFiManager.h"
 #include "lcd_display.h"
 #include "indicator.h"
 
-void connectWiFi() {
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("[WiFi] Menghubungkan");
-  lcdShowStatus("Menghubungkan WiFi...");
-  LEDBuzz(50); // LED dan buzzer menyala sebagai tanda menghubungkan
-  while (WiFi.status() != WL_CONNECTED) { // Tunggu hingga terhubung
-    Serial.print(".");
-    lcdShowStatus("Menghubungkan...");
-    setColor(255, 0, 0); // Merah jika gagal
-    buzz(100); // Bunyi buzzer sebagai tanda gagal
-    delay(500);
+void setupWiFiManager() {
+  wifiManager.init();
+}
+
+bool connectWiFiWithConfig() {
+  // Try to connect with saved or default credentials
+  if (wifiManager.connectToWiFi()) {
+    return true;
   }
-  Serial.println("\n[WiFi] Terhubung ke " + String(WIFI_SSID));
-  lcdShowStatus("Koneksi Sukses!");
-  setColor(0, 255, 0); // Hijau jika berhasil
-  Serial.println("[WiFi] IP: " + WiFi.localIP().toString());
-  lcdShowStatus("IP: " + WiFi.localIP().toString());
-  delay(1000); // Tunda sejenak untuk memastikan pesan tampil
-  setColor(0, 0, 0); // Matikan LED setelah koneksi
   
+  // If connection fails, try with default credentials as fallback
+  Serial.println("[NetworkManager] Trying default credentials as fallback");
+  if (wifiManager.connectWithCredentials(WIFI_SSID, WIFI_PASSWORD)) {
+    return true;
+  }
+  
+  // If all fails, start Access Point mode
+  Serial.println("[NetworkManager] Starting Access Point mode");
+  wifiManager.startAccessPoint();
+  return false;
+}
+
+void connectWiFi() {
+  setupWiFiManager();
+  
+  Serial.println("[NetworkManager] Starting WiFi connection");
+  lcdShowStatus("Memulai WiFi...");
+  
+  if (connectWiFiWithConfig()) {
+    Serial.println("[NetworkManager] WiFi connected successfully");
+    lcdShowStatus("WiFi Terhubung!");
+  } else {
+    Serial.println("[NetworkManager] WiFi connection failed, AP mode active");
+    lcdShowStatus("Mode AP Aktif");
+  }
 }

@@ -41,7 +41,8 @@ void setupFirebase() {
   while (!getLocalTime(&timeinfo) && ntpRetries < 10) {
     Serial.println("[NTP] Menunggu sinkronisasi waktu...");
     lcdShowStatus("Sync NTP...");
-    delay(1000);
+    yield(); // Feed watchdog during NTP sync
+    delay(500); // Reduced delay to prevent watchdog timeout
     ntpRetries++;
   }
   
@@ -63,10 +64,12 @@ void setupFirebase() {
   // Mulai koneksi Firebase
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
-  delay(1000); // beri waktu lebih untuk inisialisasi SSL
+  yield(); // Feed watchdog after Firebase begin
+  delay(500); // Reduced delay to prevent watchdog timeout
 
   fbdo.setResponseSize(1024); // Ukuran buffer untuk response JSON
-  fbdo.setBSSLBufferSize(2048, 1024);   // RX dan TX buffer SSL
+  fbdo.setBSSLBufferSize(1024, 512);   // Reduced SSL buffer to save memory
+  yield(); // Feed watchdog after buffer setup
 
   // Cek memori heap
   Serial.printf("[Heap] Free heap: %d bytes\n", ESP.getFreeHeap());
@@ -76,12 +79,13 @@ void setupFirebase() {
   lcdShowQuality("Auth Firebase");
 
   int authRetries = 0;
-  const int MAX_AUTH_RETRIES = 5;
+  const int MAX_AUTH_RETRIES = 3; // Reduced retries to prevent blocking
   
   while (!Firebase.ready() && authRetries < MAX_AUTH_RETRIES) {
     Serial.print(".");
     lcdShowStatus("Auth Retry " + String(authRetries + 1));
-    delay(2000); // Tunggu lebih lama antara percobaan
+    yield(); // Feed watchdog during authentication
+    delay(1000); // Reduced delay
     authRetries++;
   }
 
@@ -99,6 +103,7 @@ void setupFirebase() {
 }
 
 void sendBeratKeFirebase(const String& berat) {
+  // Early exit if Firebase not ready to prevent blocking
   if (!Firebase.ready()) {
     firebaseFailCount++;
     Serial.println("[Firebase] Token belum siap. Percobaan: " + String(firebaseFailCount));
@@ -119,22 +124,28 @@ void sendBeratKeFirebase(const String& berat) {
   unsigned long timestamp = millis();
   String sessionId = String(timestamp);
   
-  // Data lengkap untuk session
+  // Data lengkap untuk session - minimal data to reduce SSL overhead
   json.set("weight", berat);
   json.set("timestamp", timestamp);
   json.set("device_id", DEVICE_ID);
-  json.set("quality", "stable");
   
-  // Update current status (real-time) - with frequency limit
+  // Update current status (real-time) - with frequency limit and timeout protection
   static unsigned long lastFirebaseUpdate = 0;
+  unsigned long currentTime = millis();
+  
+  // Limit Firebase updates to prevent SSL overload
+  if (currentTime - lastFirebaseUpdate < 5000) { // Minimum 5 seconds between updates
+    return;
+  }
+  
   String currentPath = "/devices/" + String(DEVICE_ID) + "/current";
   fbdo.clear();
+  
+  yield(); // Feed watchdog before Firebase operation
+  
   if (Firebase.RTDB.setJSON(&fbdo, currentPath, &json)) {
-    // Only log successful updates every 10 seconds to reduce spam
-    if (millis() - lastFirebaseUpdate > 10000) {
-      Serial.println("[Firebase] Current data updated: " + berat);
-      lastFirebaseUpdate = millis();
-    }
+    Serial.println("[Firebase] Current data updated: " + berat);
+    lastFirebaseUpdate = currentTime;
     lcdShowQuality("Sent OK");
     setColor(0, 255, 0);
   } else {
@@ -143,6 +154,8 @@ void sendBeratKeFirebase(const String& berat) {
     setColor(255, 0, 0);
     return;
   }
+  
+  yield(); // Feed watchdog after Firebase operation
   
   // Simpan ke history dengan auto-cleanup (hanya 50 data terakhir)
   String historyPath = "/devices/" + String(DEVICE_ID) + "/history/" + sessionId;

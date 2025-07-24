@@ -556,11 +556,12 @@ String TimbangangMicroserviceClient::getAuthorizedUsersFromFirebase() {
         String userName = "";
         bool authorized = false;
         
-        if (userJson.get(fbdo, "name")) {
-          userName = fbdo.stringData();
+        FirebaseJsonData jsonData;
+        if (userJson.get(jsonData, "name")) {
+          userName = jsonData.stringValue;
         }
-        if (userJson.get(fbdo, "authorized")) {
-          authorized = fbdo.boolData();
+        if (userJson.get(jsonData, "authorized")) {
+          authorized = jsonData.boolValue;
         }
         
         // Only include authorized users

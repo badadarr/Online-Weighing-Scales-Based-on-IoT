@@ -47,12 +47,26 @@
 #define EEPROM_SIZE 512
 #define EEPROM_ADDR_BASE_MODE 0
 #define EEPROM_ADDR_BASE_WEIGHT 4
+#define EEPROM_ADDR_WIFI_SSID 8
+#define EEPROM_ADDR_WIFI_PASSWORD 72  // SSID max 64 bytes
+#define EEPROM_ADDR_WIFI_CONFIGURED 136  // 1 byte flag
 
-// Performance Configuration (BALANCED MODE)
-#define LOOP_DELAY_MS 50
-#define WEIGHT_READ_INTERVAL_MS 100
-#define WEB_UPDATE_INTERVAL_MS 500
-#define LCD_UPDATE_INTERVAL_MS 200
+// Performance Configuration (OPTIMIZED FOR STABILITY)
+#define LOOP_DELAY_MS 100           // Increased loop delay to reduce CPU load
+#define WEIGHT_READ_INTERVAL_MS 200 // Reduced weight reading frequency
+#define WEB_UPDATE_INTERVAL_MS 1000 // Reduced web update frequency
+#define LCD_UPDATE_INTERVAL_MS 500  // Reduced LCD update frequency
+
+// Task Management Configuration
+#define WEB_SERVER_CHECK_INTERVAL_MS 100    // Web server check interval
+#define FIREBASE_SYNC_INTERVAL_MS 15000     // Firebase sync interval (15 seconds)
+#define WATCHDOG_FEED_INTERVAL_MS 1000      // Feed watchdog every 1 second
+#define TASK_YIELD_DELAY_MS 10              // Yield delay between tasks
+
+// Memory Management
+#define ENABLE_MEMORY_OPTIMIZATION 1        // Enable memory optimizations
+#define REDUCE_JSON_BUFFER_SIZE 1          // Use smaller JSON buffers
+#define LIMIT_CONCURRENT_OPERATIONS 1       // Limit concurrent operations
 
 // Logging Configuration
 #define ENABLE_DETAILED_LOGGING 1

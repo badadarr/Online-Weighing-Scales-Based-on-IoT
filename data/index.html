@@ -1,43 +1,1427 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>IoT Scale</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="/style.css">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Timbangan IoT</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f5f5f5;
+      }
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .weight {
+        font-size: 48px;
+        font-weight: bold;
+        text-align: center;
+        margin: 20px 0;
+        color: #333;
+      }
+      .section {
+        background-color: white;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .section h2,
+      .section h3 {
+        margin-top: 0;
+        color: #333;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 10px;
+      }
+      .config-info {
+        margin: 10px 0;
+      }
+      .config-info div {
+        margin: 5px 0;
+      }
+      .access-status {
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+        text-align: center;
+      }
+      .access-status.granted {
+        background-color: #d4edda;
+        color: #155724;
+      }
+      .access-status.denied {
+        background-color: #f8d7da;
+        color: #721c24;
+      }
+      .rfid-status {
+        font-size: 14px;
+        color: #6c757d;
+        text-align: center;
+        margin-bottom: 15px;
+      }
+      .btn {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+        font-size: 14px;
+      }
+      .btn:hover {
+        background-color: #0069d9;
+      }
+      .btn-warning {
+        background-color: #ffc107;
+        color: #212529;
+      }
+      .btn-warning:hover {
+        background-color: #e0a800;
+      }
+      .btn-danger {
+        background-color: #dc3545;
+      }
+      .btn-danger:hover {
+        background-color: #c82333;
+      }
+      .btn-success {
+        background-color: #28a745;
+      }
+      .btn-success:hover {
+        background-color: #218838;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      .form-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      .form-group input {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      .form-group small {
+        color: #6c757d;
+        font-size: 12px;
+      }
+      .response {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+        display: none;
+      }
+      .response.success {
+        background-color: #d4edda;
+        color: #155724;
+        display: block;
+      }
+      .response.error {
+        background-color: #f8d7da;
+        color: #721c24;
+        display: block;
+      }
+      .tabs {
+        display: flex;
+        margin-bottom: 20px;
+        border-bottom: 1px solid #ddd;
+      }
+      .tab {
+        padding: 10px 20px;
+        cursor: pointer;
+        border: 1px solid transparent;
+        border-bottom: none;
+        margin-right: 5px;
+        border-radius: 5px 5px 0 0;
+      }
+      .tab.active {
+        background-color: white;
+        border-color: #ddd;
+        border-bottom-color: white;
+        margin-bottom: -1px;
+        font-weight: bold;
+      }
+      .tab-content {
+        display: none;
+      }
+      .tab-content.active {
+        display: block;
+      }
+      .user-list {
+        margin-top: 20px;
+      }
+      .user-item {
+        background-color: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
+      .user-name {
+        font-weight: bold;
+      }
+      .user-uid {
+        font-size: 12px;
+        color: #6c757d;
+      }
+      .network-item {
+        background-color: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 10px;
+        margin-bottom: 10px;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .network-item:hover {
+        background-color: #e9ecef;
+      }
+      .network-item.selected {
+        background-color: #d4edda;
+        border-color: #28a745;
+      }
+      .network-name {
+        font-weight: bold;
+        color: #333;
+      }
+      .network-info {
+        font-size: 12px;
+        color: #6c757d;
+      }
+      .wifi-status {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-size: 12px;
+        font-weight: bold;
+      }
+      .wifi-status.connected {
+        background-color: #d4edda;
+        color: #155724;
+      }
+      .wifi-status.disconnected {
+        background-color: #f8d7da;
+        color: #721c24;
+      }
+      .wifi-status.ap-mode {
+        background-color: #fff3cd;
+        color: #856404;
+      }
+    </style>
+  </head>
+  <body>
     <div class="container">
-        <h1>IoT Scale</h1>
-        <div class="weight" id="weight">Loading...</div>
-        <div>Status: <span id="status">Ready</span></div>
-        
-        <div class="section">
-            <h3>Scale Configuration</h3>
-            <div id="scale-config" class="config-info">
-                <div>Base Mode: <span id="baseModeStatus">Loading...</span></div>
-                <div>Base Weight: <span id="baseWeightStatus">Loading...</span></div>
-                <div>Scale Ready: <span id="scaleReadyStatus">Loading...</span></div>
-            </div>
+      <h1>Timbangan IoT</h1>
+
+      <div class="tabs">
+        <div class="tab active" onclick="openTab('dashboard')">Dasbor</div>
+        <div class="tab" onclick="openTab('scale-config')">
+          Konfigurasi Timbangan
         </div>
-        
-        <div class="section">
-            <h3>User Access</h3>
-            <div id="user-access" class="config-info">
-                <div>Current User: <span id="currentUserName">None</span></div>
-                <div>Session Status: <span id="sessionStatus">Inactive</span></div>
-                <div>Total Users: <span id="totalUsers">Loading...</span></div>
-            </div>
+        <div class="tab" onclick="openTab('system-config')">
+          Konfigurasi Sistem
         </div>
-        
+        <div class="tab" onclick="openTab('wifi-config')">Konfigurasi WiFi</div>
+        <div class="tab" onclick="openTab('users')">Pengguna RFID</div>
+      </div>
+
+      <!-- Dashboard Tab -->
+      <!-- Dashboard Tab -->
+      <div id="dashboard" class="tab-content active">
+        <div class="weight" id="weight">Memuat...</div>
+        <div>Status: <span id="status">Siap</span></div>
+
+        <div class="section">
+          <h3>Konfigurasi Timbangan</h3>
+          <div id="scale-config-info" class="config-info">
+            <div>Mode Dasar: <span id="baseModeStatus">Memuat...</span></div>
+            <div></div>
+            <div></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Akses Pengguna</h3>
+          <div id="user-access" class="config-info">
+            <div>
+              Pengguna Saat Ini: <span id="currentUserName">Tidak Ada</span>
+            </div>
+            <div>Status Sesi: <span id="sessionStatus">Tidak Aktif</span></div>
+            <div>Total Pengguna: <span id="totalUsers">Memuat...</span></div>
+          </div>
+        </div>
+
         <div id="access-status" class="access-status"></div>
         <div id="rfid-status" class="rfid-status"></div>
-        
+
         <div class="section">
-            <button class="btn" onclick="location='/config.html'">Configuration</button>
-            <button class="btn btn-warning" onclick="quickTare()">Quick Tare</button>
+          <button class="btn btn-warning" onclick="quickTare()">
+            Kalibrasi Cepat
+          </button>
         </div>
+      </div>
+
+      <!-- Scale Config Tab -->
+      <div id="scale-config" class="tab-content">
+        <div class="section">
+          <h2>Konfigurasi Timbangan</h2>
+          <form id="scaleConfigForm">
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="baseMode" />
+                Mode Berat Dasar (Kurangi berat wadah/dasar)
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label for="baseWeight">Berat Dasar (kg):</label>
+              <input
+                type="number"
+                id="baseWeight"
+                step="0.001"
+                placeholder="0.000"
+                min="0"
+                max="50"
+              />
+              <small
+                >Berat wadah atau dasar yang akan dikurangi dari
+                pembacaan</small
+              >
+            </div>
+
+            <div class="form-group">
+              <label for="calibrationFactor">Faktor Kalibrasi:</label>
+              <input
+                type="number"
+                id="calibrationFactor"
+                step="0.1"
+                placeholder="1.0"
+              />
+              <small>Pengali kalibrasi timbangan (biasanya sekitar 1.0)</small>
+            </div>
+
+            <div class="form-group">
+              <label for="stabilizationTime">Waktu Stabilisasi (detik):</label>
+              <input
+                type="number"
+                id="stabilizationTime"
+                min="1"
+                max="30"
+                value="3"
+              />
+              <small>Waktu tunggu agar pembacaan berat stabil</small>
+            </div>
+
+            <div class="form-group">
+              <label for="weightThreshold">Ambang Perubahan Berat (g):</label>
+              <input
+                type="number"
+                id="weightThreshold"
+                step="0.1"
+                min="0.1"
+                max="100"
+                value="1.0"
+              />
+              <small>Perubahan berat minimum yang dianggap signifikan</small>
+            </div>
+
+            <button type="button" class="btn" onclick="saveScaleConfig()">
+              Simpan Konfigurasi Timbangan
+            </button>
+            <button
+              type="button"
+              class="btn btn-warning"
+              onclick="performTare()"
+            >
+              Tare Timbangan (Nol)
+            </button>
+            <button
+              type="button"
+              class="btn btn-success"
+              onclick="calibrateScale()"
+            >
+              Kalibrasi Timbangan
+            </button>
+          </form>
+
+          <div id="scaleResponse" class="response"></div>
+        </div>
+      </div>
+
+      <!-- System Config Tab -->
+      <div id="system-config" class="tab-content">
+        <div class="section">
+          <h2>Konfigurasi Sistem</h2>
+          <form id="systemConfigForm">
+            <div class="form-group">
+              <label for="serverURL">URL Server Firebase:</label>
+              <input
+                type="url"
+                id="serverURL"
+                placeholder="https://your-project.firebaseio.com"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>Konfigurasi WiFi:</label>
+              <p>
+                SSID Saat Ini: <strong id="systemWifiSSID">Memuat...</strong>
+                <br />
+                <small
+                  >Untuk mengubah pengaturan WiFi, gunakan tab
+                  <a href="javascript:openTab('wifi-config')"
+                    >Konfigurasi WiFi</a
+                  >.</small
+                >
+              </p>
+            </div>
+
+            <div class="form-group">
+              <label for="sessionTimeout">Timeout Sesi (menit):</label>
+              <input
+                type="number"
+                id="sessionTimeout"
+                min="1"
+                max="60"
+                value="5"
+              />
+              <small>Waktu logout otomatis setelah tidak aktif</small>
+            </div>
+
+            <button type="button" class="btn" onclick="saveSystemConfig()">
+              Simpan Konfigurasi Sistem
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger"
+              onclick="resetToDefaults()"
+            >
+              Reset ke Default
+            </button>
+          </form>
+
+          <div id="systemResponse" class="response"></div>
+        </div>
+      </div>
+
+      <!-- WiFi Config Tab -->
+      <div id="wifi-config" class="tab-content">
+        <div class="section">
+          <h2>Konfigurasi WiFi</h2>
+
+          <!-- Current WiFi Status -->
+          <div class="section">
+            <h3>Status WiFi Saat Ini</h3>
+            <div id="wifi-status-info" class="config-info">
+              <div>
+                SSID Saat Ini: <span id="currentWiFiSSID">Memuat...</span>
+              </div>
+              <div>
+                Status Koneksi: <span id="wifiConnectionStatus">Memuat...</span>
+              </div>
+              <div>Alamat IP: <span id="wifiIPAddress">Memuat...</span></div>
+              <div>Kekuatan Sinyal: <span id="wifiRSSI">Memuat...</span></div>
+              <div>Mode: <span id="wifiMode">Memuat...</span></div>
+            </div>
+          </div>
+
+          <!-- WiFi Settings Form -->
+          <form id="wifiConfigForm">
+            <div class="form-group">
+              <label for="newWifiSSID">Jaringan WiFi (SSID):</label>
+              <input
+                type="text"
+                id="newWifiSSID"
+                placeholder="Masukkan nama jaringan WiFi"
+                maxlength="63"
+                required
+              />
+              <button type="button" class="btn" onclick="scanWiFiNetworks()">
+                Pindai Jaringan
+              </button>
+            </div>
+
+            <div class="form-group">
+              <label for="newWifiPassword">Password WiFi:</label>
+              <input
+                type="password"
+                id="newWifiPassword"
+                placeholder="Masukkan password WiFi"
+                minlength="8"
+                maxlength="63"
+                required
+              />
+              <small>Password minimal 8 karakter</small>
+            </div>
+
+            <div class="form-group">
+              <button type="button" class="btn" onclick="testWiFiConnection()">
+                Tes Koneksi
+              </button>
+              <button
+                type="button"
+                class="btn btn-success"
+                onclick="saveWiFiConfig()"
+              >
+                Simpan Konfigurasi WiFi
+              </button>
+            </div>
+          </form>
+
+          <!-- Available Networks -->
+          <div class="section">
+            <h3>Jaringan Tersedia</h3>
+            <div id="availableNetworks" class="config-info">
+              <p>
+                Klik "Pindai Jaringan" untuk melihat jaringan WiFi yang tersedia
+              </p>
+            </div>
+          </div>
+
+          <div id="wifiResponse" class="response"></div>
+        </div>
+      </div>
+
+      <!-- RFID Users Tab -->
+      <div id="users" class="tab-content">
+        <div class="section">
+          <h2>Manajemen Pengguna RFID</h2>
+          <form id="addUserForm">
+            <div class="form-group">
+              <label for="uid">UID RFID:</label>
+              <input
+                type="text"
+                id="uid"
+                name="uid"
+                placeholder="Masukkan UID RFID"
+                required
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="name">Nama Pengguna:</label>
+              <input
+                type="text"
+                id="name"
+                name="name"
+                placeholder="Masukkan nama pengguna"
+                required
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="email">Email (opsional):</label>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                placeholder="Masukkan email"
+              />
+            </div>
+
+            <button type="submit" class="btn">Tambah Pengguna</button>
+          </form>
+
+          <div id="response" class="response"></div>
+
+          <div class="user-list">
+            <h3>Pengguna Terdaftar</h3>
+            <div id="userList" class="users">Memuat pengguna...</div>
+            <button type="button" class="btn" onclick="syncRFIDData()">
+              Sinkronisasi Data RFID
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
-    <script src="/script.js"></script>
-</body>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        // Start weight monitoring
+        updateWeight();
+        setInterval(updateWeight, 1000);
+        setInterval(updateStatus, 2000);
+
+        // Load configuration data
+        loadScaleConfig();
+        loadSystemConfig();
+        loadWiFiConfig();
+        loadUsers();
+
+        // Setup form submission
+        document
+          .getElementById("addUserForm")
+          .addEventListener("submit", function (e) {
+            e.preventDefault();
+            addUser();
+          });
+      });
+
+      function openTab(tabName) {
+        // Hide all tab contents
+        var tabContents = document.getElementsByClassName("tab-content");
+        for (var i = 0; i < tabContents.length; i++) {
+          tabContents[i].classList.remove("active");
+        }
+
+        // Deactivate all tabs
+        var tabs = document.getElementsByClassName("tab");
+        for (var i = 0; i < tabs.length; i++) {
+          tabs[i].classList.remove("active");
+        }
+
+        // Show the selected tab content
+        document.getElementById(tabName).classList.add("active");
+
+        // Activate the clicked tab
+        var activeTab = document.querySelector(
+          ".tab[onclick=\"openTab('" + tabName + "')\"]"
+        );
+        if (activeTab) {
+          activeTab.classList.add("active");
+        }
+      }
+
+      function updateWeight() {
+        fetch("/weight")
+          .then((response) => response.text())
+          .then((data) => {
+            const weightElement = document.getElementById("weight");
+            if (weightElement) {
+              weightElement.textContent = data + " kg";
+            }
+          })
+          .catch((error) => {
+            console.error("Error fetching weight:", error);
+            const weightElement = document.getElementById("weight");
+            if (weightElement) {
+              weightElement.textContent = "Kesalahan Koneksi";
+            }
+          });
+      }
+
+      function updateStatus() {
+        fetch("/status")
+          .then((response) => response.json())
+          .then((data) => {
+            const statusElement = document.getElementById("status");
+            const accessElement = document.getElementById("access-status");
+            const rfidElement = document.getElementById("rfid-status");
+
+            if (statusElement) {
+              statusElement.textContent = "Terhubung";
+              statusElement.style.color = "#28a745";
+            }
+
+            // Update access status
+            if (accessElement && data.access_status) {
+              accessElement.textContent = data.access_status;
+              accessElement.className = "access-status";
+              if (
+                data.access_status.includes("granted") ||
+                data.access_status.includes("welcome")
+              ) {
+                accessElement.classList.add("granted");
+              } else if (
+                data.access_status.includes("denied") ||
+                data.access_status.includes("unauthorized")
+              ) {
+                accessElement.classList.add("denied");
+              }
+            }
+
+            // Update RFID status
+            if (rfidElement && data.rfid_status) {
+              rfidElement.textContent = "RFID: " + data.rfid_status;
+            }
+
+            // Update scale configuration status
+            const baseModeElement = document.getElementById("baseModeStatus");
+            const baseWeightElement =
+              document.getElementById("baseWeightStatus");
+            const scaleReadyElement =
+              document.getElementById("scaleReadyStatus");
+
+            if (baseModeElement) {
+              baseModeElement.textContent = data.baseMode ? "ON" : "OFF";
+              baseModeElement.style.color = data.baseMode
+                ? "#28a745"
+                : "#6c757d";
+            }
+
+            if (baseWeightElement) {
+              baseWeightElement.textContent = data.baseWeight
+                ? data.baseWeight.toFixed(3) + " kg"
+                : "0.000 kg";
+            }
+
+            if (scaleReadyElement) {
+              scaleReadyElement.textContent = data.systemReady
+                ? "Ready"
+                : "Not Ready";
+              scaleReadyElement.style.color = data.systemReady
+                ? "#28a745"
+                : "#dc3545";
+            }
+
+            // Update user access information
+            const currentUserElement =
+              document.getElementById("currentUserName");
+            const sessionStatusElement =
+              document.getElementById("sessionStatus");
+            const totalUsersElement = document.getElementById("totalUsers");
+
+            if (currentUserElement) {
+              if (data.accessGranted && data.authorizedUser) {
+                currentUserElement.textContent = data.authorizedUser;
+                currentUserElement.style.color = "#28a745";
+              } else {
+                currentUserElement.textContent = "Tidak Ada";
+                currentUserElement.style.color = "#6c757d";
+              }
+            }
+
+            if (sessionStatusElement) {
+              sessionStatusElement.textContent = data.accessGranted
+                ? "Aktif"
+                : "Tidak Aktif";
+              sessionStatusElement.style.color = data.accessGranted
+                ? "#28a745"
+                : "#dc3545";
+            }
+
+            if (totalUsersElement) {
+              totalUsersElement.textContent = data.cachedUsers || "0";
+              totalUsersElement.style.color = "#007bff";
+            }
+          })
+          .catch((error) => {
+            console.error("Error fetching status:", error);
+            const statusElement = document.getElementById("status");
+            if (statusElement) {
+              statusElement.textContent = "Kesalahan";
+              statusElement.style.color = "#dc3545";
+            }
+          });
+      }
+
+      function quickTare() {
+        if (
+          !confirm(
+            "Ini akan mengatur pembacaan saat ini sebagai nol. Pastikan timbangan kosong. Lanjutkan?"
+          )
+        ) {
+          return;
+        }
+
+        fetch("/api/tare", {
+          method: "POST",
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              alert("Timbangan berhasil di-tare!");
+            } else {
+              alert(
+                "Kesalahan saat melakukan tare: " +
+                  (data.message || "Kesalahan tidak diketahui")
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Error performing tare:", error);
+            alert("Kesalahan jaringan. Silakan coba lagi.");
+          });
+      }
+
+      function loadScaleConfig() {
+        fetch("/api/config")
+          .then((response) => response.json())
+          .then((data) => {
+            if (data) {
+              document.getElementById("baseMode").checked =
+                data.baseMode || false;
+              document.getElementById("baseWeight").value =
+                data.baseWeight || 0;
+              document.getElementById("calibrationFactor").value =
+                data.calibrationFactor || 1.0;
+              document.getElementById("stabilizationTime").value =
+                data.stabilizationTime || 3;
+              document.getElementById("weightThreshold").value =
+                data.weightThreshold || 1.0;
+            }
+          })
+          .catch((error) => {
+            console.error("Error loading scale config:", error);
+            showScaleResponse(
+              "Kesalahan memuat konfigurasi timbangan",
+              "error"
+            );
+          });
+      }
+
+      function saveScaleConfig() {
+        const config = {
+          baseMode: document.getElementById("baseMode").checked,
+          baseWeight:
+            parseFloat(document.getElementById("baseWeight").value) || 0,
+          calibrationFactor:
+            parseFloat(document.getElementById("calibrationFactor").value) ||
+            1.0,
+          stabilizationTime:
+            parseInt(document.getElementById("stabilizationTime").value) || 3,
+          weightThreshold:
+            parseFloat(document.getElementById("weightThreshold").value) || 1.0,
+        };
+
+        fetch("/api/config", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(config),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              showScaleResponse(
+                "Konfigurasi timbangan berhasil disimpan!",
+                "success"
+              );
+            } else {
+              showScaleResponse(
+                "Kesalahan menyimpan konfigurasi: " +
+                  (data.message || "Kesalahan tidak diketahui"),
+                "error"
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Error saving scale config:", error);
+            showScaleResponse(
+              "Kesalahan jaringan. Silakan coba lagi.",
+              "error"
+            );
+          });
+      }
+
+      function performTare() {
+        if (
+          !confirm(
+            "Ini akan mengatur pembacaan saat ini sebagai nol. Pastikan timbangan kosong. Lanjutkan?"
+          )
+        ) {
+          return;
+        }
+
+        fetch("/api/tare", {
+          method: "POST",
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              showScaleResponse(
+                "Timbangan berhasil di-tare! Pembacaan saat ini diatur ke nol.",
+                "success"
+              );
+            } else {
+              showScaleResponse(
+                "Kesalahan melakukan tare: " +
+                  (data.message || "Kesalahan tidak diketahui"),
+                "error"
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Error performing tare:", error);
+            showScaleResponse(
+              "Kesalahan jaringan. Silakan coba lagi.",
+              "error"
+            );
+          });
+      }
+
+      function calibrateScale() {
+        const weight = prompt(
+          "Letakkan beban yang diketahui di atas timbangan dan masukkan nilainya dalam kg:"
+        );
+        if (!weight || isNaN(weight) || parseFloat(weight) <= 0) {
+          showScaleResponse(
+            "Nilai berat yang dimasukkan tidak valid.",
+            "error"
+          );
+          return;
+        }
+
+        if (
+          !confirm(
+            `Kalibrasi dengan ${weight} kg. Pastikan beban ini telah ditempatkan dengan benar di atas timbangan. Lanjutkan?`
+          )
+        ) {
+          return;
+        }
+
+        fetch("/api/calibrate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ knownWeight: parseFloat(weight) }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              showScaleResponse("Timbangan berhasil dikalibrasi!", "success");
+              loadScaleConfig(); // Reload config to show updated values
+            } else {
+              showScaleResponse(
+                "Kesalahan kalibrasi timbangan: " +
+                  (data.message || "Kesalahan tidak diketahui"),
+                "error"
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Error calibrating scale:", error);
+            showScaleResponse(
+              "Kesalahan jaringan. Silakan coba lagi.",
+              "error"
+            );
+          });
+      }
+
+      function loadSystemConfig() {
+        fetch("/api/system-config")
+          .then((response) => response.json())
+          .then((data) => {
+            if (data) {
+              document.getElementById("serverURL").value = data.serverURL || "";
+              document.getElementById("systemWifiSSID").textContent =
+                data.currentSSID || "Not connected";
+              document.getElementById("sessionTimeout").value =
+                data.sessionTimeout || 5;
+            }
+          })
+          .catch((error) => {
+            console.error("Error loading system config:", error);
+            showSystemResponse("Error loading system configuration", "error");
+          });
+      }
+
+      function saveSystemConfig() {
+        const config = {
+          serverURL: document.getElementById("serverURL").value.trim(),
+          sessionTimeout:
+            parseInt(document.getElementById("sessionTimeout").value) || 5,
+        };
+
+        fetch("/api/system-config", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(config),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              showSystemResponse(
+                "System configuration saved successfully!",
+                "success"
+              );
+            } else {
+              showSystemResponse(
+                "Error saving configuration: " +
+                  (data.message || "Unknown error"),
+                "error"
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Error saving system config:", error);
+            showSystemResponse(
+              "Kesalahan jaringan. Silakan coba lagi.",
+              "error"
+            );
+          });
+      }
+
+      function resetToDefaults() {
+        if (
+          !confirm(
+            "This will reset all configurations to default values. This action cannot be undone. Continue?"
+          )
+        ) {
+          return;
+        }
+
+        fetch("/api/reset-defaults", {
+          method: "POST",
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              showSystemResponse(
+                "All configurations reset to defaults successfully!",
+                "success"
+              );
+              setTimeout(() => {
+                loadScaleConfig();
+                loadSystemConfig();
+              }, 1000);
+            } else {
+              showSystemResponse(
+                "Error resetting to defaults: " +
+                  (data.message || "Unknown error"),
+                "error"
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Error resetting to defaults:", error);
+            showSystemResponse(
+              "Kesalahan jaringan. Silakan coba lagi.",
+              "error"
+            );
+          });
+      }
+
+      function addUser() {
+        const uid = document.getElementById("uid").value.trim();
+        const name = document.getElementById("name").value.trim();
+        const email = document.getElementById("email").value.trim();
+
+        if (!uid || !name) {
+          showResponse("Silakan isi semua field", "error");
+          return;
+        }
+
+        // Validate UID format (basic check for hex characters)
+        if (!/^[0-9A-Fa-f\s]+$/.test(uid)) {
+          showResponse(
+            "Format UID tidak valid. Silakan gunakan karakter heksadesimal saja.",
+            "error"
+          );
+          return;
+        }
+
+        const userData = {
+          uid: uid.toUpperCase().replace(/\s+/g, ""),
+          name: name,
+          email: email,
+        };
+
+        fetch("/api/add-rfid-user", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(userData),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              showResponse("Pengguna berhasil ditambahkan!", "success");
+              document.getElementById("addUserForm").reset();
+              setTimeout(() => {
+                loadUsers();
+              }, 1000);
+            } else {
+              showResponse(
+                "Kesalahan menambah pengguna: " +
+                  (data.message || "Kesalahan tidak diketahui"),
+                "error"
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Error adding user:", error);
+            showResponse("Kesalahan jaringan. Silakan coba lagi.", "error");
+          });
+      }
+
+      function loadUsers() {
+        const userListDiv = document.getElementById("userList");
+        if (!userListDiv) return;
+
+        userListDiv.textContent = "Memuat pengguna...";
+
+        fetch("/api/rfid/users")
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success && data.users) {
+              displayUsers(data.users);
+            } else {
+              userListDiv.innerHTML =
+                '<div class="user-item">Tidak ada pengguna ditemukan atau kesalahan memuat pengguna</div>';
+            }
+          })
+          .catch((error) => {
+            console.error("Error loading users:", error);
+            userListDiv.innerHTML =
+              '<div class="user-item">Kesalahan memuat pengguna. Silakan periksa koneksi.</div>';
+          });
+      }
+
+      function syncRFIDData() {
+        fetch("/api/rfid-sync", {
+          method: "POST",
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              showResponse(
+                "Data RFID berhasil disinkronisasi! " +
+                  data.cachedUsers +
+                  " pengguna dimuat.",
+                "success"
+              );
+              setTimeout(() => {
+                loadUsers();
+              }, 1000);
+            } else {
+              showResponse(
+                "Kesalahan sinkronisasi data RFID: " +
+                  (data.message || "Kesalahan tidak diketahui"),
+                "error"
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Error syncing RFID data:", error);
+            showResponse("Kesalahan jaringan. Silakan coba lagi.", "error");
+          });
+      }
+
+      function displayUsers(users) {
+        const userListDiv = document.getElementById("userList");
+        if (!userListDiv) return;
+
+        if (users.length === 0) {
+          userListDiv.innerHTML =
+            '<div class="user-item">Belum ada pengguna terdaftar</div>';
+          return;
+        }
+
+        let html = "";
+        users.forEach((user) => {
+          html += `
+                <div class="user-item">
+                    <div class="user-info">
+                        <div class="user-name">${escapeHtml(user.name)}</div>
+                        <div class="user-uid">UID: ${escapeHtml(user.uid)}</div>
+                    </div>
+                </div>
+            `;
+        });
+
+        userListDiv.innerHTML = html;
+      }
+
+      function showResponse(message, type) {
+        const responseDiv = document.getElementById("response");
+        if (responseDiv) {
+          responseDiv.textContent = message;
+          responseDiv.className = "response " + type;
+
+          // Clear message after 5 seconds
+          setTimeout(() => {
+            responseDiv.textContent = "";
+            responseDiv.className = "response";
+          }, 5000);
+        }
+      }
+
+      function showScaleResponse(message, type) {
+        const responseDiv = document.getElementById("scaleResponse");
+        if (responseDiv) {
+          responseDiv.textContent = message;
+          responseDiv.className = "response " + type;
+
+          // Clear message after 5 seconds
+          setTimeout(() => {
+            responseDiv.textContent = "";
+            responseDiv.className = "response";
+          }, 5000);
+        }
+      }
+
+      function showSystemResponse(message, type) {
+        const responseDiv = document.getElementById("systemResponse");
+        if (responseDiv) {
+          responseDiv.textContent = message;
+          responseDiv.className = "response " + type;
+
+          // Clear message after 5 seconds
+          setTimeout(() => {
+            responseDiv.textContent = "";
+            responseDiv.className = "response";
+          }, 5000);
+        }
+      }
+
+      // WiFi Configuration Functions
+      function loadWiFiConfig() {
+        fetch("/api/wifi-config")
+          .then((response) => response.json())
+          .then((data) => {
+            if (data) {
+              // Update current WiFi status
+              document.getElementById("currentWiFiSSID").textContent =
+                data.currentSSID || "Not connected";
+
+              const statusElement = document.getElementById(
+                "wifiConnectionStatus"
+              );
+              if (data.isConnected) {
+                statusElement.innerHTML =
+                  '<span class="wifi-status connected">Connected</span>';
+              } else if (data.isAPMode) {
+                statusElement.innerHTML =
+                  '<span class="wifi-status ap-mode">Access Point Mode</span>';
+              } else {
+                statusElement.innerHTML =
+                  '<span class="wifi-status disconnected">Disconnected</span>';
+              }
+
+              document.getElementById("wifiIPAddress").textContent =
+                data.ipAddress || "N/A";
+              document.getElementById("wifiRSSI").textContent = data.rssi
+                ? data.rssi + " dBm"
+                : "N/A";
+              document.getElementById("wifiMode").textContent = data.isAPMode
+                ? "Access Point"
+                : "Station";
+
+              // Pre-fill saved SSID
+              if (data.savedSSID) {
+                document.getElementById("newWifiSSID").value = data.savedSSID;
+              }
+            }
+          })
+          .catch((error) => {
+            console.error("Error loading WiFi config:", error);
+            showWiFiResponse("Kesalahan memuat konfigurasi WiFi", "error");
+          });
+      }
+
+      function scanWiFiNetworks() {
+        showWiFiResponse("Memindai jaringan WiFi...", "success");
+        document.getElementById("availableNetworks").innerHTML =
+          "<p>Memindai jaringan...</p>";
+
+        fetch("/api/wifi-scan")
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success" && data.networks) {
+              displayWiFiNetworks(data.networks);
+              showWiFiResponse(`Ditemukan ${data.count} jaringan`, "success");
+            } else {
+              document.getElementById("availableNetworks").innerHTML =
+                "<p>Tidak ada jaringan ditemukan</p>";
+              showWiFiResponse("Tidak ada jaringan ditemukan", "error");
+            }
+          })
+          .catch((error) => {
+            console.error("Error scanning WiFi:", error);
+            showWiFiResponse("Kesalahan memindai jaringan", "error");
+          });
+      }
+
+      function displayWiFiNetworks(networks) {
+        const container = document.getElementById("availableNetworks");
+
+        if (networks.length === 0) {
+          container.innerHTML = "<p>Tidak ada jaringan ditemukan</p>";
+          return;
+        }
+
+        let html = "";
+        networks.forEach((network, index) => {
+          const signalStrength = network.rssi;
+          const signalIcon =
+            signalStrength > -50 ? "📶" : signalStrength > -70 ? "📶" : "📶";
+          const securityIcon = network.encryption === "Open" ? "🔓" : "🔒";
+
+          html += `
+            <div class="network-item" onclick="selectNetwork('${escapeHtml(
+              network.ssid
+            )}')">
+              <div>
+                <div class="network-name">${signalIcon} ${escapeHtml(
+            network.ssid
+          )}</div>
+                <div class="network-info">
+                  ${securityIcon} ${network.encryption} | Channel ${
+            network.channel
+          } | ${network.rssi} dBm
+                </div>
+              </div>
+            </div>
+          `;
+        });
+
+        container.innerHTML = html;
+      }
+
+      function selectNetwork(ssid) {
+        document.getElementById("newWifiSSID").value = ssid;
+
+        // Highlight selected network
+        const networkItems = document.querySelectorAll(".network-item");
+        networkItems.forEach((item) => item.classList.remove("selected"));
+
+        const selectedItem = Array.from(networkItems).find((item) =>
+          item.querySelector(".network-name").textContent.includes(ssid)
+        );
+        if (selectedItem) {
+          selectedItem.classList.add("selected");
+        }
+      }
+
+      function testWiFiConnection() {
+        const ssid = document.getElementById("newWifiSSID").value.trim();
+        const password = document.getElementById("newWifiPassword").value;
+
+        if (!ssid) {
+          showWiFiResponse(
+            "Silakan masukkan nama jaringan WiFi (SSID)",
+            "error"
+          );
+          return;
+        }
+
+        if (!password || password.length < 8) {
+          showWiFiResponse("Password minimal 8 karakter", "error");
+          return;
+        }
+
+        showWiFiResponse("Menguji koneksi WiFi...", "success");
+
+        const testData = {
+          ssid: ssid,
+          password: password,
+        };
+
+        fetch("/api/wifi-test", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(testData),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              showWiFiResponse(
+                `Tes koneksi berhasil! IP: ${data.ip}, Sinyal: ${data.rssi} dBm`,
+                "success"
+              );
+            } else {
+              showWiFiResponse(data.message || "Tes koneksi gagal", "error");
+            }
+          })
+          .catch((error) => {
+            console.error("Error testing WiFi:", error);
+            showWiFiResponse("Kesalahan jaringan saat tes", "error");
+          });
+      }
+
+      function saveWiFiConfig() {
+        const ssid = document.getElementById("newWifiSSID").value.trim();
+        const password = document.getElementById("newWifiPassword").value;
+
+        if (!ssid) {
+          showWiFiResponse(
+            "Silakan masukkan nama jaringan WiFi (SSID)",
+            "error"
+          );
+          return;
+        }
+
+        if (!password || password.length < 8) {
+          showWiFiResponse("Password minimal 8 karakter", "error");
+          return;
+        }
+
+        if (
+          !confirm(
+            `Simpan konfigurasi WiFi untuk "${ssid}"? Perangkat akan restart untuk menerapkan perubahan.`
+          )
+        ) {
+          return;
+        }
+
+        const configData = {
+          ssid: ssid,
+          password: password,
+        };
+
+        fetch("/api/wifi-config", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(configData),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              showWiFiResponse(
+                "Konfigurasi WiFi tersimpan! Perangkat sedang restart...",
+                "success"
+              );
+
+              // Clear form
+              document.getElementById("newWifiPassword").value = "";
+
+              // Reload page after device restart
+              setTimeout(() => {
+                window.location.reload();
+              }, 5000);
+            } else {
+              showWiFiResponse(
+                data.message || "Failed to save WiFi configuration",
+                "error"
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Error saving WiFi config:", error);
+            showWiFiResponse("Kesalahan jaringan. Silakan coba lagi.", "error");
+          });
+      }
+
+      function showWiFiResponse(message, type) {
+        const responseDiv = document.getElementById("wifiResponse");
+        if (responseDiv) {
+          responseDiv.textContent = message;
+          responseDiv.className = "response " + type;
+
+          // Clear message after 5 seconds
+          setTimeout(() => {
+            responseDiv.textContent = "";
+            responseDiv.className = "response";
+          }, 5000);
+        }
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+      }
+    </script>
+  </body>
 </html>

@@ -1,7 +1,7 @@
 #include "SessionManager.h"
 #include "Indicator.h"
 #include "lcd_display.h"
-#include "WebServerMicroservice.h"
+#include "WebServerIntegrated.h"
 
 // Global instance
 SessionManager sessionManager;
@@ -36,8 +36,8 @@ bool SessionManager::login(String uid) {
     lcdShowStatus("Login: " + uid.substring(0, 8) + "...");
     
     // Update web server session status
-    extern TimbangangMicroserviceClient webMicroservice;
-    webMicroservice.setSessionStatus(true, uid);
+    extern TimbangangWebServerIntegrated webServer;
+    webServer.setSessionStatus(true, uid);
     
     return true;
 }
@@ -69,8 +69,9 @@ bool SessionManager::logout() {
     lcdShowStatus("Logout: " + uid.substring(0, 8) + "...");
     
     // Update web server session status
-    extern TimbangangMicroserviceClient webMicroservice;
-    webMicroservice.setSessionStatus(false, "");
+    extern TimbangangWebServerIntegrated webServer;
+    webServer.setSessionStatus(false, "");
+    webServer.setLogoutStatus(uid);
     
     return true;
 }

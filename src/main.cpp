@@ -14,7 +14,7 @@
 #include "LocalStorage.h"   // Local storage untuk menyimpan data secara lokal
 #include "lcd_display.h"    // LCD display untuk menampilkan informasi
 #include "pinManager.h"     // Pin manager untuk mengatur pin GPIO
-#include "WebServerMicroservice.h" // Microservice client untuk komunikasi dengan server cluster
+#include "WebServerIntegrated.h" // Integrated web server to avoid async_tcp conflicts
 #include "SessionManager.h" // Session manager untuk login/logout dengan RFID
 
 // File: src/main.cpp
@@ -24,7 +24,7 @@ bool sendingActive = false; // Status pengiriman data (now controlled by session
 
 // Global instances
 extern SessionManager sessionManager;
-extern TimbangangMicroserviceClient webMicroservice;
+extern TimbangangWebServerIntegrated webServer;
 
 // System calibration control
 bool systemCalibrationRequested = false;
@@ -69,11 +69,11 @@ void setup()
 
   // NEW: Initialize web server for configuration
   lcdShowStatus("Init Web Server...");
-  webMicroservice.init();
-  webMicroservice.begin();
-  webMicroservice.setSystemReady(true);
+  webServer.init();
+  webServer.begin();
+  webServer.setSystemReady(true);
   Serial.print("[WEB] Web server started at: http://");
-  Serial.println(webMicroservice.getWebServerIP());
+  Serial.println(webServer.getWebServerIP());
 
   lcdShowStatus("Siap digunakan...");
   ulangiBuzzer();
@@ -81,14 +81,22 @@ void setup()
 }
 void loop()
 {
+  // Feed watchdog to prevent timeout
+  static unsigned long lastWatchdogFeed = 0;
+  unsigned long currentTime = millis();
+  
+  if (currentTime - lastWatchdogFeed > WATCHDOG_FEED_INTERVAL_MS) {
+    yield(); // Feed the watchdog
+    lastWatchdogFeed = currentTime;
+  }
+
   // Add delay to prevent excessive loop frequency (configurable)
   static unsigned long lastLoop = 0;
-  unsigned long currentTime = millis();
 
   // Limit loop frequency based on performance mode
   if (currentTime - lastLoop < LOOP_DELAY_MS)
   {
-    delay(10); // Small delay to prevent CPU overload
+    delay(TASK_YIELD_DELAY_MS); // Small delay to prevent CPU overload and feed watchdog
     return;
   }
   lastLoop = currentTime;
@@ -107,8 +115,7 @@ void loop()
     }
     
     // Handle web server even without access
-    webMicroservice.handleClient();
-    webMicroservice.loop();
+    webServer.handleClient();
     delay(100);
     return;
   } else {
@@ -134,11 +141,17 @@ void loop()
     lastWeighingActivity = currentTime;
   }
 
-  // Handle web server requests
-  webMicroservice.handleClient();
+  // Handle web server requests (optimized with yield)
+  webServer.handleClient();
+  yield(); // Prevent watchdog timeout
   
-  // Handle microservice communication (WebSocket and API)
-  webMicroservice.loop();
+  // Optional: Handle integrated server loop (less frequent)
+  static unsigned long lastWebLoop = 0;
+  if (currentTime - lastWebLoop > FIREBASE_SYNC_INTERVAL_MS) { // Every 15 seconds
+    webServer.loop();
+    lastWebLoop = currentTime;
+    yield(); // Prevent watchdog timeout
+  }
   
   // Check for access timeout (handled in handleRFIDAccess())
   // Access control is managed by RFID system
@@ -199,30 +212,31 @@ void loop()
   {
     weightData = getAdvancedWeightData();
     lastWeightRead = currentTime;
+    yield(); // Prevent watchdog timeout during sensor reading
   }
   else
   {
     // Use cached weight data
-    weightData = webMicroservice.getLastWeightData();
+    weightData = webServer.getLastWeightData();
   }
 
   // Apply base correction based on web configuration
   float finalWeight = weightData.stable;
   WeightData correctedWeightData = weightData;
 
-  if (webMicroservice.getBaseMode())
+  if (webServer.getBaseMode())
   {
     // Apply base correction to both stable and filtered weights
     if (weightData.stable > 0)
     {
-      finalWeight = weightData.stable - webMicroservice.getBaseWeight();
+      finalWeight = weightData.stable - webServer.getBaseWeight();
       if (finalWeight < 0)
         finalWeight = 0;
     }
 
     if (weightData.filtered > 0)
     {
-      correctedWeightData.filtered = weightData.filtered - webMicroservice.getBaseWeight();
+      correctedWeightData.filtered = weightData.filtered - webServer.getBaseWeight();
       if (correctedWeightData.filtered < 0)
         correctedWeightData.filtered = 0;
     }
@@ -237,7 +251,7 @@ void loop()
       Serial.print("[WEIGHT] Base corrected: ");
       Serial.print(weightData.stable, 3);
       Serial.print(" - ");
-      Serial.print(webMicroservice.getBaseWeight(), 3);
+      Serial.print(webServer.getBaseWeight(), 3);
       Serial.print(" = ");
       Serial.println(finalWeight, 3);
       lastBaseCorrected = finalWeight;
@@ -275,8 +289,8 @@ void loop()
   static unsigned long lastWebUpdate = 0;
   if (currentTime - lastWebUpdate >= WEB_UPDATE_INTERVAL_MS)
   {
-    webMicroservice.updateWeightData(correctedWeightData); // Use corrected weight data
-    webMicroservice.setFinalWeight(finalWeight);           // Update berat final yang sudah dikoreksi
+    webServer.updateWeightData(correctedWeightData); // Use corrected weight data
+    webServer.setFinalWeight(finalWeight);           // Update berat final yang sudah dikoreksi
     lastWebUpdate = currentTime;
   }
 
@@ -306,7 +320,7 @@ void loop()
       lastStableWeight = finalWeight;
       setColor(0, 255, 255); // Cyan - tunggu stabil
       lcdShowQuality("Waiting");
-      webMicroservice.setStabilizationStatus("waiting", 3);
+      webServer.setStabilizationStatus("waiting", 3);
       buzz(BUZZ_WAITING); // Long beep for waiting
       Serial.println("[WEIGHT] Mulai tunggu stabilisasi: " + berat + " kg");
     }
@@ -323,7 +337,7 @@ void loop()
         lastStableWeight = finalWeight;
         setColor(255, 165, 0); // Orange - reset tunggu
         lcdShowQuality("Change");
-        webMicroservice.setStabilizationStatus("waiting", 3);
+        webServer.setStabilizationStatus("waiting", 3);
         Serial.println("[WEIGHT] Reset timer, berat berubah: " + String(weightChange, 3) + " kg");
       }
       else if (stableDuration >= STABLE_DURATION_MS)
@@ -331,7 +345,7 @@ void loop()
         // Only send to Firebase if session is active
         if (sessionManager.isSessionActive() && sendingActive) {
           // Sudah stabil cukup lama, kirim ke Firebase
-          webMicroservice.setStabilizationStatus("sending", 0);
+          webServer.setStabilizationStatus("sending", 0);
           sendBeratKeFirebase(berat);
           setColor(0, 255, 0); // Hijau - berhasil kirim
           lcdShowQuality("Sent OK"); // Changed to show Quality instead of Status
@@ -347,7 +361,7 @@ void loop()
         // Reset untuk pengiriman berikutnya
         lastStableState = false;
         lastStableWeight = 0; // Reset berat stabil
-        webMicroservice.setStabilizationStatus("standby", 0);
+        webServer.setStabilizationStatus("standby", 0);
         
         // Show success message longer and then show quality
         delay(2000); // Show "Sent OK" for 2 seconds
@@ -369,7 +383,7 @@ void loop()
         int remainingSeconds = (STABLE_DURATION_MS - stableDuration) / 1000 + 1;
         setColor(0, 255, 255); // Cyan - tunggu
         lcdShowQuality("Wait: " + String(remainingSeconds) + "s");
-        webMicroservice.setStabilizationStatus("waiting", remainingSeconds);
+        webServer.setStabilizationStatus("waiting", remainingSeconds);
       }
     }
   }
@@ -402,7 +416,7 @@ void loop()
         lcdShowQuality("Motion");
         lastFirebaseDisplayUpdate = currentTime;
       }
-      webMicroservice.setStabilizationStatus("motion", 0);
+      webServer.setStabilizationStatus("motion", 0);
 
       // Buzz only when status changes or every 3 seconds
       if (lastQuality != "motion" || (currentTime - lastBuzzTime > 3000))
@@ -418,7 +432,7 @@ void loop()
         lcdShowQuality("Stabilizing");
         lastFirebaseDisplayUpdate = currentTime;
       }
-      webMicroservice.setStabilizationStatus("stabilizing", 0);
+      webServer.setStabilizationStatus("stabilizing", 0);
 
       // Buzz only when status changes
       if (lastQuality != "stabilizing")
@@ -434,7 +448,7 @@ void loop()
         lcdShowQuality("Error");
         lastFirebaseDisplayUpdate = currentTime;
       }
-      webMicroservice.setStabilizationStatus("error", 0);
+      webServer.setStabilizationStatus("error", 0);
 
       // Buzz every 5 seconds for error
       if (lastQuality != "error" || (currentTime - lastBuzzTime > 5000))
@@ -459,7 +473,7 @@ void loop()
           lcdShowQuality("Ready");
         }
         
-        webMicroservice.setStabilizationStatus("standby", 0);
+        webServer.setStabilizationStatus("standby", 0);
         lastQualityUpdate = currentTime;
       }
       // No buzz for standby
@@ -483,7 +497,7 @@ void loop()
   String currentUser = getCurrentAuthorizedUser();
   
   // Update web server with current user info
-  webMicroservice.setRFIDStatus(currentUser);
+  webServer.setRFIDStatus(currentUser);
 
   // Only extend access time when weighing, don't send data continuously
   if (isWeighingAccessGranted() && sessionManager.isSessionActive() && berat != "")
@@ -608,8 +622,8 @@ void loop()
       Serial.println("Is Stable: " + String(currentData.isStable ? "Yes" : "No"));
       Serial.println("Has Motion: " + String(currentData.hasMotion ? "Yes" : "No"));
       Serial.println("Faktor Kalibrasi: " + String(getFaktorKalibrasi(), 6));
-      Serial.println("Base Mode: " + String(webMicroservice.getBaseMode() ? "ON" : "OFF"));
-      Serial.println("Base Weight: " + String(webMicroservice.getBaseWeight(), 3) + " kg");
+      Serial.println("Base Mode: " + String(webServer.getBaseMode() ? "ON" : "OFF"));
+      Serial.println("Base Weight: " + String(webServer.getBaseWeight(), 3) + " kg");
       Serial.println("Final Weight: " + String(finalWeight, 3) + " kg");
       Serial.println("RFID Active: " + String(sendingActive ? "Yes" : "No"));
       Serial.println("Session Active: " + String(sessionManager.isSessionActive() ? "Yes" : "No"));
