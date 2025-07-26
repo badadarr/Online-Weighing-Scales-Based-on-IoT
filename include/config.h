@@ -1,25 +1,51 @@
+/**
+ * @file config.h
+ * @brief File konfigurasi utama sistem timbangan IoT
+ * @details Berisi semua konstanta, parameter, dan konfigurasi yang digunakan
+ *          di seluruh sistem termasuk WiFi, Firebase, hardware, dan performance
+ */
+
 #pragma once
 
-// WiFi
-#define WIFI_SSID "HUAWEI-qKN3"
-#define WIFI_PASSWORD "calyaf1886jj"
+// ==================== NETWORK CONFIGURATION ====================
+/**
+ * @brief Konfigurasi koneksi WiFi
+ * @details SSID dan password untuk koneksi ke jaringan WiFi lokal
+ */
+#define WIFI_SSID "HUAWEI-qKN3"        // Nama jaringan WiFi
+#define WIFI_PASSWORD "calyaf1886jj"    // Password jaringan WiFi
 
-// Firebase Project
-#define API_KEY "AIzaSyCpT8kEDaXLxqTavO4Als-w7Wn4BDcyRMM"
-#define DATABASE_URL "https://iot-scales-enhancement-default-rtdb.asia-southeast1.firebasedatabase.app"
-#define USER_EMAIL "esp32@timbangan-iot.com"
-#define USER_PASSWORD "esp32secure123"
+// ==================== FIREBASE CONFIGURATION ====================
+/**
+ * @brief Konfigurasi Firebase Realtime Database
+ * @details Kredensial dan URL untuk koneksi ke Firebase cloud database
+ */
+#define API_KEY "AIzaSyCpT8kEDaXLxqTavO4Als-w7Wn4BDcyRMM"  // Firebase API Key
+#define DATABASE_URL "https://iot-scales-enhancement-default-rtdb.asia-southeast1.firebasedatabase.app"  // Firebase Database URL
+#define USER_EMAIL "esp32@timbangan-iot.com"     // Email untuk autentikasi Firebase
+#define USER_PASSWORD "esp32secure123"           // Password untuk autentikasi Firebase
 
-// Perangkat
-#define DEVICE_ID "esp32_timbangan_001"
+// ==================== DEVICE IDENTIFICATION ====================
+/**
+ * @brief Identifikasi unik perangkat
+ * @details ID unik untuk identifikasi perangkat di Firebase dan logging
+ */
+#define DEVICE_ID "esp32_timbangan_001"  // ID unik perangkat timbangan
 
-// Waktu update data ke Firebase (ms)
-#define FIREBASE_UPDATE_INTERVAL 5000
+// ==================== TIMING CONFIGURATION ====================
+/**
+ * @brief Interval update data ke Firebase dalam milidetik
+ * @details Mengatur seberapa sering data dikirim ke cloud database
+ */
+#define FIREBASE_UPDATE_INTERVAL 5000     // Update setiap 5 detik
 
-// Konfigurasi waktu (NTP)
-#define NTP_SERVER "pool.ntp.org"
-#define GMT_OFFSET_SEC 25200 // GMT+7
-#define DAYLIGHT_OFFSET_SEC 0
+/**
+ * @brief Konfigurasi Network Time Protocol (NTP)
+ * @details Pengaturan sinkronisasi waktu dengan server NTP
+ */
+#define NTP_SERVER "pool.ntp.org"         // Server NTP untuk sinkronisasi waktu
+#define GMT_OFFSET_SEC 25200              // Offset GMT+7 untuk WIB (7 * 3600)
+#define DAYLIGHT_OFFSET_SEC 0             // Tidak ada daylight saving time
 
 // Web Server Configuration
 #define WEB_SERVER_PORT 80

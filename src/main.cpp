@@ -1,21 +1,30 @@
-#include <Arduino.h>             // Include Arduino core library
-#include <Firebase_ESP_Client.h> // Include Firebase ESP Client library
-#include <WiFi.h>                // Include WiFi library for ESP32
-#include <Wire.h>
-#include <LiquidCrystal_I2C.h>
-///////////////////////Self Library//////////////////////////////////////
-#include "config.h"         // Include configuration file
-#include "NetworkManager.h" // Network manager untuk mengatur koneksi WiFi
-#include "FirebaseClient.h" // Firebase client untuk mengatur koneksi ke Firebase
-#include "SensorReader.h"   // Sensor reader untuk membaca data dari sensor
-#include "TimeSync.h"       // Time sync untuk menyinkronkan waktu
-#include "RFIDReader.h"     // RFID reader untuk membaca data dari RFID
-#include "Indicator.h"      // Indicator untuk mengatur LED indikator
-#include "LocalStorage.h"   // Local storage untuk menyimpan data secara lokal
-#include "lcd_display.h"    // LCD display untuk menampilkan informasi
-#include "pinManager.h"     // Pin manager untuk mengatur pin GPIO
-#include "WebServerIntegrated.h" // Integrated web server to avoid async_tcp conflicts
-#include "SessionManager.h" // Session manager untuk login/logout dengan RFID
+/**
+ * @file main.cpp
+ * @brief Program utama sistem timbangan IoT dengan kontrol akses RFID
+ * @details Mengintegrasikan semua modul: sensor HX711, RFID MFRC522, LCD, 
+ *          web server, Firebase, dan session management untuk sistem timbangan
+ *          yang dapat diakses secara remote dengan kontrol akses berbasis RFID
+ */
+
+#include <Arduino.h>             // Arduino core library
+#include <Firebase_ESP_Client.h> // Firebase ESP Client library
+#include <WiFi.h>                // WiFi library untuk ESP32
+#include <Wire.h>                // I2C communication library
+#include <LiquidCrystal_I2C.h>   // LCD I2C display library
+
+// ==================== CUSTOM LIBRARIES ====================
+#include "config.h"              // Konfigurasi global sistem
+#include "NetworkManager.h"      // Manajemen koneksi WiFi
+#include "FirebaseClient.h"      // Client Firebase untuk cloud storage
+#include "SensorReader.h"        // Pembaca sensor timbangan HX711
+#include "TimeSync.h"            // Sinkronisasi waktu NTP
+#include "RFIDReader.h"          // Pembaca RFID MFRC522
+#include "Indicator.h"           // Kontrol LED dan buzzer
+#include "LocalStorage.h"        // Penyimpanan lokal EEPROM
+#include "lcd_display.h"         // Tampilan LCD I2C
+#include "pinManager.h"          // Definisi pin GPIO
+#include "WebServerIntegrated.h" // Web server terintegrasi
+#include "SessionManager.h"      // Manajemen sesi pengguna
 
 // File: src/main.cpp
 unsigned long lastUpdate = 0;
@@ -38,8 +47,22 @@ static bool lastStableState = false;
 // NEW: Function declarations
 bool isWeightStable(float weight);
 
+/**
+ * @brief Fungsi setup() - Inisialisasi sistem saat startup
+ * @details Menginisialisasi semua komponen hardware dan software:
+ *          - Serial communication untuk debugging
+ *          - Indikator LED dan buzzer
+ *          - LCD display untuk user interface
+ *          - Koneksi WiFi dan sinkronisasi waktu
+ *          - EEPROM untuk penyimpanan lokal
+ *          - Sensor RFID dan timbangan
+ *          - Firebase untuk cloud storage
+ *          - Web server untuk remote access
+ *          - Session manager untuk kontrol akses
+ */
 void setup()
 {
+  // Inisialisasi komunikasi serial untuk debugging
   Serial.begin(115200);
   Serial.println("[SYSTEM] Booting...");
   Serial.println("[INFO] Ketik 'help' untuk melihat perintah kalibrasi");
@@ -79,9 +102,22 @@ void setup()
   ulangiBuzzer();
   lcdClear();
 }
+/**
+ * @brief Fungsi loop() - Loop utama sistem yang berjalan terus menerus
+ * @details Menangani semua operasi real-time sistem:
+ *          - Watchdog feeding untuk mencegah system reset
+ *          - Kontrol akses RFID dan session management
+ *          - Pembacaan dan filtering data sensor timbangan
+ *          - Deteksi stabilitas dan pengiriman data ke Firebase
+ *          - Update display LCD dan indikator visual/audio
+ *          - Handling web server requests
+ *          - Processing serial commands untuk kalibrasi
+ *          - Base weight correction dan quality assessment
+ */
 void loop()
 {
-  // Feed watchdog to prevent timeout
+  // ==================== WATCHDOG MANAGEMENT ====================
+  // Feed watchdog secara berkala untuk mencegah system timeout
   static unsigned long lastWatchdogFeed = 0;
   unsigned long currentTime = millis();
   

@@ -1,3 +1,10 @@
+/**
+ * @file WebServerMicroservice.h
+ * @brief Header untuk web server microservice timbangan IoT
+ * @details Menyediakan REST API dan web interface untuk konfigurasi dan monitoring
+ *          timbangan secara remote melalui browser web
+ */
+
 #pragma once
 #include <Arduino.h>
 #include <WiFi.h>
@@ -9,6 +16,11 @@
 #include "SensorReader.h"
 #include "SessionManager.h"
 
+/**
+ * @brief Class untuk web server microservice timbangan
+ * @details Mengelola web server, REST API, dan interface untuk konfigurasi
+ *          serta monitoring timbangan melalui browser web
+ */
 class TimbangangMicroserviceClient {
 private:
   AsyncWebServer* server;
@@ -30,10 +42,34 @@ private:
   unsigned long sessionStartTime;
 
 public:
+  /**
+   * @brief Constructor untuk TimbangangMicroserviceClient
+   * @details Inisialisasi server dan variabel default
+   */
   TimbangangMicroserviceClient();
+  
+  /**
+   * @brief Inisialisasi web server dan endpoint API
+   * @details Setup semua route REST API, static file serving, dan handler
+   */
   void init();
+  
+  /**
+   * @brief Memulai web server
+   * @details Mengaktifkan web server pada port yang ditentukan
+   */
   void begin();
+  
+  /**
+   * @brief Handle client requests (compatibility method)
+   * @details AsyncWebServer menangani client secara otomatis
+   */
   void handleClient();
+  
+  /**
+   * @brief Loop method untuk maintenance web server
+   * @details Pemeliharaan rutin web server dan koneksi
+   */
   void loop();
   
   // SPIFFS methods

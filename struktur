@@ -1,18 +1,28 @@
-firmware timbangan-online/
+Online Weighing Scales Based on-IoT/
 ├── platformio.ini                        // Konfigurasi project PlatformIO
+├── .gitignore                            // File yang diabaikan Git
+├── firebase-rules.json                   // Aturan keamanan Firebase
 ├── include/
-│   └── config.h                          // Konfigurasi global (WiFi, Firebase, dsb)
+│   ├── config.h                          // Konfigurasi global (WiFi, Firebase, dsb)
+│   ├── pinManager.h                      // Definisi pin-pin hardware
+│   └── README                            // Dokumentasi include
 ├── src/
-│   ├── main.cpp                          // Program utama (setup & loop)
-│   └── setting/
-│       └── pinManager.h                  // Definisi pin-pin hardware
+│   └── main.cpp                          // Program utama (setup & loop)
 ├── lib/
+│   ├── Firebase-ESP-Client/              // Library Firebase ESP Client (eksternal)
+│   │   ├── src/                          // Source code library Firebase
+│   │   ├── examples/                     // Contoh penggunaan
+│   │   ├── library.json                  // Metadata library
+│   │   └── README.md                     // Dokumentasi library
 │   ├── FirebaseClient/                   // Library custom untuk Firebase
 │   │   ├── FirebaseClient.h              // Header Firebase
 │   │   └── FirebaseClient.cpp            // Implementasi Firebase
 │   ├── Indicator/                        // Library indikator LED/buzzer
 │   │   ├── Indicator.h                   // Header indikator
 │   │   └── Indicator.cpp                 // Implementasi indikator
+│   ├── lcd_display/                      // Library tampilan LCD
+│   │   ├── lcd_display.h                 // Header fungsi LCD
+│   │   └── lcd_display.cpp               // Implementasi fungsi LCD
 │   ├── LocalStorage/                     // Library penyimpanan lokal (EEPROM/Flash)
 │   │   ├── LocalStorage.h                // Header penyimpanan lokal
 │   │   └── LocalStorage.cpp              // Implementasi penyimpanan lokal
@@ -25,20 +35,41 @@ firmware timbangan-online/
 │   ├── SensorReader/                     // Library pembaca sensor timbangan (HX711)
 │   │   ├── SensorReader.h                // Header sensor timbangan
 │   │   └── SensorReader.cpp              // Implementasi sensor timbangan
+│   ├── SessionManager/                   // Library manajemen sesi pengguna
+│   │   ├── SessionManager.h              // Header manajemen sesi
+│   │   └── SessionManager.cpp            // Implementasi manajemen sesi
 │   ├── TimeSync/                         // Library sinkronisasi waktu (NTP)
 │   │   ├── TimeSync.h                    // Header sinkronisasi waktu
 │   │   └── TimeSync.cpp                  // Implementasi sinkronisasi waktu
-│   └── ui/                               // Library tampilan LCD
-│       ├── lcd_display.h                 // Header fungsi LCD
-│       └── lcd_display.cpp               // Implementasi fungsi LCD
-├── .pio/
-│   └── build/                            // Folder build otomatis (abaikan)
-├── dashboard/                            // Web Dashboard (Firebase Hosting)
-│   ├── index.html                        // Tampilan utama dashboard
-│   ├── app.js                            // Logika dashboard (JavaScript)
-│   ├── style.css                         // Style dashboard (CSS)
-│   └── firebase.json                     // Konfigurasi hosting Firebase
-├── functions/                            // Firebase Cloud Functions (backend)
-│   ├── package.json                      // Dependensi Node.js untuk functions
-│   └── index.js                          // Kode utama cloud function
-└── README.md                             // Panduan
+│   ├── WebServer/                        // Library web server
+│   │   ├── WebServerIntegrated.h         // Header web server terintegrasi
+│   │   ├── WebServerIntegrated.cpp       // Implementasi web server terintegrasi
+│   │   ├── WebServerMicroservice.h       // Header web server microservice
+│   │   └── WebServerMicroservice.cpp     // Implementasi web server microservice
+│   ├── WiFiManager/                      // Library manajemen WiFi (alternatif)
+│   │   ├── WiFiManager.h                 // Header WiFi manager
+│   │   └── WiFiManager.cpp               // Implementasi WiFi manager
+│   └── README                            // Dokumentasi library
+├── data/                                 // File web interface (SPIFFS)
+│   ├── index.html                        // Tampilan utama web interface
+│   ├── script.js                         // JavaScript untuk web interface
+│   └── style.css                         // Style CSS untuk web interface
+├── test/
+│   └── README                            // Dokumentasi testing
+├── summary.md/                           // Dokumentasi pengembangan
+│   ├── CLEANUP_SUMMARY.md                // Ringkasan pembersihan kode
+│   ├── FIREBASE_PERMISSION_FIX.md        // Perbaikan permission Firebase
+│   ├── FIREBASE_SETUP_GUIDE.md           // Panduan setup Firebase
+│   ├── INTEGRATION_COMPLETE.md           // Ringkasan integrasi lengkap
+│   ├── LCD_DISPLAY_FIX_SUMMARY.md        // Perbaikan tampilan LCD
+│   ├── LCD_FIREBASE_STATUS_FIX.md        // Perbaikan status Firebase di LCD
+│   ├── LCD_QUALITY_DISPLAY_UPDATE.md     // Update tampilan kualitas di LCD
+│   ├── LOOP_OPTIMIZATION.md              // Optimasi loop utama
+│   ├── MICROSERVICES_INTEGRATION.md      // Integrasi microservices
+│   ├── PERFORMANCE_OPTIMIZATION_SUMMARY.md // Ringkasan optimasi performa
+│   ├── RFID_ACCESS_CONTROL_SUMMARY.md    // Ringkasan kontrol akses RFID
+│   ├── RFID_DATA_COLLECTION.md           // Pengumpulan data RFID
+│   └── WATCHDOG_TIMEOUT_FIX.md           // Perbaikan watchdog timeout
+└── .pio/                                 // Folder build PlatformIO (auto-generated)
+    └── libdeps/                          // Dependencies library
+        └── esp32dev/                     // Library untuk ESP32
