@@ -96,15 +96,9 @@ void TimbangangWebServerIntegrated::init()
     server->on("/api/config", HTTP_GET, [this]()
                { server->send(200, "application/json", getConfigJSON()); });
 
-    // New configuration API endpoints
-    server->on("/api/calibrate", HTTP_POST, [this]()
-               { handleCalibrate(); });
-
+    // Essential system endpoints only
     server->on("/api/base-mode", HTTP_POST, [this]()
                { handleBaseMode(); });
-
-    server->on("/api/base-weight", HTTP_POST, [this]()
-               { handleBaseWeight(); });
 
     server->on("/api/system-tare", HTTP_POST, [this]()
                { handleSystemTare(); });
@@ -115,72 +109,9 @@ void TimbangangWebServerIntegrated::init()
     server->on("/api/test-buzzer", HTTP_POST, [this]()
                { handleTestBuzzer(); });
 
-    // Simplified config endpoint
-    server->on("/api/config", HTTP_POST, [this]()
-               {
-    if (server->hasArg("plain")) {
-      String body = server->arg("plain");
-      DynamicJsonDocument doc(512);
-      deserializeJson(doc, body);
-      
-      bool configChanged = false;
-      
-      if (doc.containsKey("baseMode")) {
-        setBaseMode(doc["baseMode"]);
-        configChanged = true;
-      }
-      if (doc.containsKey("baseWeight")) {
-        setBaseWeight(doc["baseWeight"]);
-        configChanged = true;
-      }
-      
-      if (configChanged) {
-        saveConfiguration();
-      }
-      
-      server->send(200, "application/json", 
-        "{\"status\":\"success\",\"message\":\"Configuration saved successfully\"}");
-    } else {
-      server->send(400, "application/json", 
-        "{\"status\":\"error\",\"message\":\"No data received\"}");
-    } });
 
-    // Essential calibration endpoint
-    server->on("/api/calibrate", HTTP_POST, [this]()
-               {
-    if (server->hasArg("plain")) {
-      String body = server->arg("plain");
-      DynamicJsonDocument doc(256);
-      deserializeJson(doc, body);
-      
-      float currentWeight = lastWeightData.raw > 0 ? lastWeightData.raw : lastWeightData.filtered;
-      float knownWeight = doc.containsKey("knownWeight") ? doc["knownWeight"].as<float>() : currentWeight;
-      
-      if (currentWeight <= 0.01) {
-        server->send(400, "application/json", 
-          "{\"status\":\"error\",\"message\":\"No weight detected. Place weight on scale first.\"}");
-        return;
-      }
-      
-      if (!lastWeightData.isStable) {
-        server->send(400, "application/json", 
-          "{\"status\":\"error\",\"message\":\"Weight not stable. Wait for stable reading.\"}");
-        return;
-      }
-      
-      // Do base calibration
-      finishBaseCalibration(currentWeight);
-      setBaseMode(true);
-      
-      Serial.println("[WEB] Base Calibration: " + String(currentWeight, 3) + " kg -> " + String(baseWeight, 3) + " kg");
-      
-      server->send(200, "application/json", 
-        "{\"status\":\"success\",\"baseWeight\":" + String(baseWeight, WEIGHT_PRECISION) + 
-        ",\"message\":\"Base calibrated successfully\"}");
-    } else {
-      server->send(400, "application/json", 
-        "{\"status\":\"error\",\"message\":\"No data received\"}");
-    } });
+
+
 
     // Essential tare endpoint
     server->on("/api/tare", HTTP_POST, [this]()
@@ -570,7 +501,7 @@ bool TimbangangWebServerIntegrated::initSPIFFS()
 // HTML pages (minimal versions to save flash memory)
 String TimbangangWebServerIntegrated::getMainPageHTML()
 {
-    return R"HTML(<!DOCTYPE html><html><head><title>IoT Scale</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:Arial;margin:20px;text-align:center}.container{max-width:400px;margin:0 auto;padding:20px;border:1px solid #ddd;border-radius:10px}.weight{font-size:24px;font-weight:bold;color:#333;margin:10px 0}.access-status{padding:10px;margin:10px 0;border-radius:5px}.access-granted{background:#d4edda;color:#155724;border:1px solid #c3e6cb}.access-denied{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}.rfid-status{padding:8px;margin:5px 0;border-radius:5px;font-size:12px}.btn{background:#007bff;color:white;padding:10px 20px;border:none;border-radius:5px;margin:5px;cursor:pointer;text-decoration:none;display:inline-block}.btn-warning{background:#ffc107;color:#212529}.btn:hover{opacity:0.8}</style></head><body><div class="container"><h1>IoT Scale</h1><div class="weight" id="weight">Loading...</div><div>Status: <span id="status">Ready</span></div><div id="access-status" class="access-status"></div><div id="rfid-status" class="rfid-status"></div><div><a href="/config.html" class="btn">Configuration</a><button class="btn btn-warning" onclick="quickTare()">Quick Tare</button></div></div><script>document.addEventListener("DOMContentLoaded",function(){let isConnected=false;updateWeight();setInterval(updateWeight,1000);setInterval(updateStatus,2000);function updateWeight(){fetch("/weight").then(response=>response.text()).then(data=>{const weightElement=document.getElementById("weight");if(weightElement){weightElement.textContent=data+" kg"}isConnected=true}).catch(error=>{console.error("Error fetching weight:",error);const weightElement=document.getElementById("weight");if(weightElement){weightElement.textContent="Connection Error"}isConnected=false})}function updateStatus(){fetch("/status").then(response=>response.json()).then(data=>{const statusElement=document.getElementById("status");const accessElement=document.getElementById("access-status");const rfidElement=document.getElementById("rfid-status");if(statusElement){statusElement.textContent=isConnected?"Connected":"Disconnected";statusElement.style.color=isConnected?"#28a745":"#dc3545"}if(accessElement&&data.access_status){accessElement.textContent=data.access_status;accessElement.className="access-status";if(data.access_status.includes("granted")||data.access_status.includes("welcome")){accessElement.classList.add("granted")}else if(data.access_status.includes("denied")||data.access_status.includes("unauthorized")){accessElement.classList.add("denied")}}if(rfidElement&&data.rfid_status){rfidElement.textContent="RFID: "+data.rfid_status}}).catch(error=>{console.error("Error fetching status:",error);const statusElement=document.getElementById("status");if(statusElement){statusElement.textContent="Error";statusElement.style.color="#dc3545"}})}});function quickTare(){if(!confirm("This will set the current reading as zero. Make sure the scale is empty. Continue?")){return}fetch("/api/tare",{method:"POST"}).then(response=>response.json()).then(data=>{if(data.status==="success"){alert("Scale tared successfully!")}else{alert("Error performing tare: "+(data.message||"Unknown error"))}}).catch(error=>{console.error("Error performing tare:",error);alert("Network error. Please try again.")})}</script></body></html>)HTML";
+    return R"HTML(<!DOCTYPE html><html><head><title>IoT Scale</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:Arial;margin:20px;text-align:center}.container{max-width:400px;margin:0 auto;padding:20px;border:1px solid #ddd;border-radius:10px}.weight{font-size:24px;font-weight:bold;color:#333;margin:10px 0}.base-info{font-size:14px;color:#666;margin:5px 0}.access-status{padding:10px;margin:10px 0;border-radius:5px}.access-granted{background:#d4edda;color:#155724;border:1px solid #c3e6cb}.access-denied{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}.rfid-status{padding:8px;margin:5px 0;border-radius:5px;font-size:12px}.btn{background:#007bff;color:white;padding:10px 20px;border:none;border-radius:5px;margin:5px;cursor:pointer;text-decoration:none;display:inline-block}.btn-warning{background:#ffc107;color:#212529}.btn:hover{opacity:0.8}</style></head><body><div class="container"><h1>IoT Scale</h1><div class="weight" id="weight">Loading...</div><div class="base-info" id="base-info">Mode: Loading...</div><div>Status: <span id="status">Ready</span></div><div id="access-status" class="access-status"></div><div id="rfid-status" class="rfid-status"></div><div><button class="btn btn-warning" onclick="quickTare()">Tare</button><button class="btn" onclick="setBaseMode()">Mode Base</button><button class="btn" onclick="setNormalMode()">Mode Normal</button></div></div><script>document.addEventListener("DOMContentLoaded",function(){let isConnected=false;updateWeight();setInterval(updateWeight,1000);setInterval(updateStatus,2000);function updateWeight(){fetch("/weight").then(response=>response.text()).then(data=>{const weightElement=document.getElementById("weight");if(weightElement){weightElement.textContent=data+" kg"}isConnected=true}).catch(error=>{console.error("Error fetching weight:",error);const weightElement=document.getElementById("weight");if(weightElement){weightElement.textContent="Connection Error"}isConnected=false})}function updateStatus(){fetch("/status").then(response=>response.json()).then(data=>{const statusElement=document.getElementById("status");const accessElement=document.getElementById("access-status");const rfidElement=document.getElementById("rfid-status");const baseInfoElement=document.getElementById("base-info");if(statusElement){statusElement.textContent=isConnected?"Connected":"Disconnected";statusElement.style.color=isConnected?"#28a745":"#dc3545"}if(baseInfoElement){if(data.baseMode&&data.baseWeight>0){baseInfoElement.textContent="Mode: Base ("+data.baseWeight.toFixed(3)+" kg)";baseInfoElement.style.color="#007bff"}else{baseInfoElement.textContent="Mode: Normal";baseInfoElement.style.color="#6c757d"}}if(accessElement&&data.access_status){accessElement.textContent=data.access_status;accessElement.className="access-status";if(data.access_status.includes("granted")||data.access_status.includes("welcome")){accessElement.classList.add("granted")}else if(data.access_status.includes("denied")||data.access_status.includes("unauthorized")){accessElement.classList.add("denied")}}if(rfidElement&&data.rfid_status){rfidElement.textContent="RFID: "+data.rfid_status}}).catch(error=>{console.error("Error fetching status:",error);const statusElement=document.getElementById("status");if(statusElement){statusElement.textContent="Error";statusElement.style.color="#dc3545"}})}});function quickTare(){if(!confirm("This will set the current reading as zero. Make sure the scale is empty. Continue?")){return}fetch("/api/tare",{method:"POST"}).then(response=>response.json()).then(data=>{if(data.status==="success"){alert("Scale tared successfully!")}else{alert("Error performing tare: "+(data.message||"Unknown error"))}}).catch(error=>{console.error("Error performing tare:",error);alert("Network error. Please try again.")})};function setBaseMode(){if(!confirm("Aktifkan Mode Base? Letakkan wadah/base di timbangan dan pastikan stabil.")){return}fetch("/api/base-mode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"on"})}).then(response=>response.json()).then(data=>{if(data.status==="success"){alert("Mode Base diaktifkan!")}else{alert("Error: "+(data.message||"Unknown error"))}}).catch(error=>{console.error("Error setting base mode:",error);alert("Kesalahan jaringan. Silakan coba lagi.")})};function setNormalMode(){if(!confirm("Nonaktifkan Mode Base dan kembali ke Mode Normal?")){return}fetch("/api/base-mode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"off"})}).then(response=>response.json()).then(data=>{if(data.status==="success"){alert("Mode Normal diaktifkan!")}else{alert("Error: "+(data.message||"Unknown error"))}}).catch(error=>{console.error("Error setting normal mode:",error);alert("Kesalahan jaringan. Silakan coba lagi.")})}</script></body></html>)HTML";
 }
 
 // Configuration persistence methods
@@ -702,145 +633,42 @@ bool TimbangangWebServerIntegrated::collectRFIDUsersData()
     return true; // Placeholder
 }
 
-// New configuration handler implementations
-void TimbangangWebServerIntegrated::handleCalibrate()
-{
-    if (!server->hasArg("plain"))
-    {
-        server->send(400, "application/json",
-                     "{\"status\":\"error\",\"message\":\"No data received\"}");
-        return;
-    }
 
-    String body = server->arg("plain");
-    DynamicJsonDocument doc(256);
-    DeserializationError error = deserializeJson(doc, body);
-
-    if (error)
-    {
-        server->send(400, "application/json",
-                     "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
-        return;
-    }
-
-    if (!doc.containsKey("weight"))
-    {
-        server->send(400, "application/json",
-                     "{\"status\":\"error\",\"message\":\"Weight value required\"}");
-        return;
-    }
-
-    float knownWeight = doc["weight"];
-    if (knownWeight <= 0)
-    {
-        server->send(400, "application/json",
-                     "{\"status\":\"error\",\"message\":\"Invalid weight value\"}");
-        return;
-    }
-
-    // Set system calibration request
-    extern bool systemCalibrationRequested;
-    extern float systemCalibrationWeight;
-
-    systemCalibrationRequested = true;
-    systemCalibrationWeight = knownWeight;
-
-    Serial.println("[WEB] System calibration requested: " + String(knownWeight, 3) + " kg");
-
-    server->send(200, "application/json",
-                 "{\"status\":\"success\",\"message\":\"Calibration started with " + String(knownWeight, 3) + " kg\"}");
-}
 
 void TimbangangWebServerIntegrated::handleBaseMode()
 {
-    if (!server->hasArg("plain"))
-    {
-        server->send(400, "application/json",
-                     "{\"status\":\"error\",\"message\":\"No data received\"}");
+    if (!server->hasArg("plain")) {
+        server->send(400, "application/json", "{\"status\":\"error\",\"message\":\"No data received\"}");
         return;
     }
 
     String body = server->arg("plain");
     DynamicJsonDocument doc(256);
-    DeserializationError error = deserializeJson(doc, body);
+    deserializeJson(doc, body);
 
-    if (error)
-    {
-        server->send(400, "application/json",
-                     "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
-        return;
+    String mode = doc["mode"].as<String>();
+    
+    if (mode == "on") {
+        // Set base mode with current weight
+        float currentWeight = lastWeightData.filtered;
+        if (currentWeight > 0.01) {
+            setBaseWeight(currentWeight);
+            setBaseMode(true);
+            saveConfiguration();
+            Serial.println("[WEB] Base mode ON: " + String(currentWeight, 3) + " kg");
+            server->send(200, "application/json", "{\"status\":\"success\",\"message\":\"Base mode activated\"}");
+        } else {
+            server->send(400, "application/json", "{\"status\":\"error\",\"message\":\"No weight detected\"}");
+        }
+    } else if (mode == "off") {
+        setBaseMode(false);
+        setBaseWeight(0.0);
+        saveConfiguration();
+        Serial.println("[WEB] Base mode OFF");
+        server->send(200, "application/json", "{\"status\":\"success\",\"message\":\"Normal mode activated\"}");
+    } else {
+        server->send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid mode\"}");
     }
-
-    if (!doc.containsKey("mode"))
-    {
-        server->send(400, "application/json",
-                     "{\"status\":\"error\",\"message\":\"Mode value required\"}");
-        return;
-    }
-
-    String mode = doc["mode"];
-    bool newBaseMode = false;
-
-    if (mode == "on" || mode == "manual" || mode == "auto")
-    {
-        newBaseMode = true;
-    }
-    else if (mode == "off")
-    {
-        newBaseMode = false;
-    }
-    else
-    {
-        server->send(400, "application/json",
-                     "{\"status\":\"error\",\"message\":\"Invalid mode value\"}");
-        return;
-    }
-
-    setBaseMode(newBaseMode);
-    saveConfiguration();
-
-    Serial.println("[WEB] Base mode updated: " + String(newBaseMode ? "ON" : "OFF"));
-
-    server->send(200, "application/json",
-                 "{\"status\":\"success\",\"message\":\"Base mode updated\",\"baseMode\":" + String(newBaseMode ? "true" : "false") + "}");
-}
-
-void TimbangangWebServerIntegrated::handleBaseWeight()
-{
-    if (!server->hasArg("plain"))
-    {
-        server->send(400, "application/json",
-                     "{\"status\":\"error\",\"message\":\"No data received\"}");
-        return;
-    }
-
-    String body = server->arg("plain");
-    DynamicJsonDocument doc(256);
-    DeserializationError error = deserializeJson(doc, body);
-
-    if (error)
-    {
-        server->send(400, "application/json",
-                     "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
-        return;
-    }
-
-    if (!doc.containsKey("weight"))
-    {
-        server->send(400, "application/json",
-                     "{\"status\":\"error\",\"message\":\"Weight value required\"}");
-        return;
-    }
-
-    float newBaseWeight = doc["weight"];
-
-    setBaseWeight(newBaseWeight);
-    saveConfiguration();
-
-    Serial.println("[WEB] Base weight updated: " + String(newBaseWeight, 3) + " kg");
-
-    server->send(200, "application/json",
-                 "{\"status\":\"success\",\"message\":\"Base weight updated\",\"baseWeight\":" + String(newBaseWeight, 3) + "}");
 }
 
 void TimbangangWebServerIntegrated::handleSystemTare()

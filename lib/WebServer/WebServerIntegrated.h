@@ -94,10 +94,8 @@ public:
   bool isServerTaskActive() { return serverTaskActive; }
   void optimizedFirebaseSync();
   
-  // New configuration handler methods
-  void handleCalibrate();
+  // Essential handler methods only
   void handleBaseMode();
-  void handleBaseWeight();
   void handleSystemTare();
   void handleFactoryReset();
   void handleTestBuzzer();

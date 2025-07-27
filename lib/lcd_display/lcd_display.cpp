@@ -124,3 +124,18 @@ void lcdShowLogoutInstructions() {
   lcd.print("untuk logout");
 }
 
+void lcdShowBaseMode(bool baseMode, float baseWeight) {
+  // Tampilkan mode base di baris kedua setelah quality
+  lcd.setCursor(0, 1);
+  if (baseMode && baseWeight > 0) {
+    lcd.print("Base:");
+    lcd.setCursor(6, 1);
+    lcd.print(String(baseWeight, 2));
+    lcd.print("kg");
+    // Clear sisa karakter
+    lcd.print("   ");
+  } else {
+    lcd.print("Mode: Normal   "); // Clear entire line
+  }
+}
+

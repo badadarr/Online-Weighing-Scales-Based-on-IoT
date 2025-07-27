@@ -17,3 +17,4 @@ void lcdClear();
 void lcdClearFirebaseLine(); // fungsi untuk membersihkan baris Firebase saja
 void lcdShowQuality(String quality); // fungsi untuk menampilkan quality timbangan
 void lcdShowLogoutInstructions(); // fungsi untuk menampilkan instruksi logout
+void lcdShowBaseMode(bool baseMode, float baseWeight); // fungsi untuk menampilkan mode base

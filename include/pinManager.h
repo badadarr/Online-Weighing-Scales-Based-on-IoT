@@ -17,8 +17,8 @@
 
 // ==== RGB LED (Common Cathode) ====
 #define LED_PIN_R      4 // Pin Merah
-#define LED_PIN_G    2 // Pin Hijau
-#define LED_PIN_B     16 // Pin Biru
+#define LED_PIN_G    16 // Pin Hijau
+#define LED_PIN_B     2 // Pin Biru
 
 // ==== BUZZER ====
 #define BUZZER_PIN       17 // Pin Buzzer

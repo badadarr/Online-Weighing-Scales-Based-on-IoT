@@ -335,6 +335,14 @@ void loop()
   if (currentTime - lastLCDUpdate >= LCD_UPDATE_INTERVAL_MS)
   {
     lcdShowBerat(beratDisplay); // Use corrected display weight
+    
+    // Show base mode status on LCD
+    static unsigned long lastBaseModeDisplay = 0;
+    if (currentTime - lastBaseModeDisplay >= 5000) { // Update every 5 seconds
+      lcdShowBaseMode(webServer.getBaseMode(), webServer.getBaseWeight());
+      lastBaseModeDisplay = currentTime;
+    }
+    
     lastLCDUpdate = currentTime;
   }
 
