@@ -234,7 +234,6 @@
       </div>
 
       <!-- Dashboard Tab -->
-      <!-- Dashboard Tab -->
       <div id="dashboard" class="tab-content active">
         <div class="weight" id="weight">Memuat...</div>
         <div>Status: <span id="status">Siap</span></div>
@@ -262,19 +261,11 @@
         <div id="rfid-status" class="rfid-status"></div>
 
         <div class="section">
-          <button class="btn btn-warning" onclick="quickTare()">
-            Tare
-          </button>
-          <button class="btn" onclick="setBaseMode()">
-            Mode Base
-          </button>
-          <button class="btn" onclick="setNormalMode()">
-            Mode Normal
-          </button>
+          <button class="btn btn-warning" onclick="quickTare()">Tare</button>
+          <button class="btn" onclick="setBaseMode()">Mode Base</button>
+          <button class="btn" onclick="setNormalMode()">Mode Normal</button>
         </div>
       </div>
-
-
 
       <!-- System Config Tab -->
       <div id="system-config" class="tab-content">
@@ -564,16 +555,22 @@
 
             // Update scale configuration status
             const baseModeElement = document.getElementById("baseModeStatus");
-            const baseWeightElement = document.getElementById("baseWeightStatus");
+            const baseWeightElement =
+              document.getElementById("baseWeightStatus");
 
             if (baseModeElement) {
-              baseModeElement.textContent = data.baseMode ? "AKTIF" : "TIDAK AKTIF";
-              baseModeElement.style.color = data.baseMode ? "#28a745" : "#6c757d";
+              baseModeElement.textContent = data.baseMode
+                ? "AKTIF"
+                : "TIDAK AKTIF";
+              baseModeElement.style.color = data.baseMode
+                ? "#28a745"
+                : "#6c757d";
             }
 
             if (baseWeightElement) {
               if (data.baseMode && data.baseWeight > 0) {
-                baseWeightElement.textContent = data.baseWeight.toFixed(3) + " kg";
+                baseWeightElement.textContent =
+                  data.baseWeight.toFixed(3) + " kg";
                 baseWeightElement.style.color = "#007bff";
               } else {
                 baseWeightElement.textContent = "Tidak digunakan";
@@ -663,7 +660,7 @@
         fetch("/api/base-mode", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "on" })
+          body: JSON.stringify({ mode: "on" }),
         })
           .then((response) => response.json())
           .then((data) => {
@@ -687,7 +684,7 @@
         fetch("/api/base-mode", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "off" })
+          body: JSON.stringify({ mode: "off" }),
         })
           .then((response) => response.json())
           .then((data) => {
@@ -702,8 +699,6 @@
             alert("Kesalahan jaringan. Silakan coba lagi.");
           });
       }
-
-
 
       function loadSystemConfig() {
         fetch("/api/system-config")
@@ -945,8 +940,6 @@
           }, 5000);
         }
       }
-
-
 
       function showSystemResponse(message, type) {
         const responseDiv = document.getElementById("systemResponse");

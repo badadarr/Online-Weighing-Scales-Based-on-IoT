@@ -65,6 +65,37 @@ bool isUIDAuthorized(String uid);
 void requestRFIDRegistration(String uid);
 
 /**
+ * @brief Menambahkan user RFID baru langsung ke Firebase
+ * @param uid String UID RFID yang akan ditambahkan
+ * @param name String nama user
+ * @param email String email user (opsional)
+ * @return true jika berhasil ditambahkan, false jika gagal
+ * @details Menambahkan user baru ke Firebase dan local storage
+ */
+bool addRFIDUser(String uid, String name, String email);
+
+/**
+ * @brief Memproses request add user yang tertunda
+ * @details Memproses queue add user request untuk menghindari konflik SSL
+ */
+void processPendingAddUserRequests();
+
+/**
+ * @brief Menambahkan request add user ke queue
+ * @param uid String UID yang akan ditambahkan
+ * @param name String nama user
+ * @details Queue request untuk diproses nanti agar tidak konflik SSL
+ */
+void queueAddUserRequest(String uid, String name);
+
+/**
+ * @brief Memaksa refresh cache RFID dari Firebase
+ * @return true jika berhasil refresh, false jika gagal
+ * @details Membersihkan cache dan mengambil data terbaru dari Firebase
+ */
+bool forceRefreshRFIDCache();
+
+/**
  * @brief Memberikan akses timbangan untuk UID tertentu
  * @param uid String UID yang akan diberikan akses
  * @return true jika akses berhasil diberikan, false jika gagal

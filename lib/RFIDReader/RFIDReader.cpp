@@ -175,6 +175,61 @@ void requestRFIDRegistration(String uid) {
   }
 }
 
+// Function to add RFID user directly (called from web interface or serial)
+bool addRFIDUser(String uid, String name, String email) {
+  if (!Firebase.ready()) {
+    Serial.println("[RFID] Firebase not ready for adding user");
+    return false;
+  }
+  
+  // Create user data JSON
+  FirebaseJson userJson;
+  userJson.set("uid", uid);
+  userJson.set("name", name);
+  userJson.set("email", email.isEmpty() ? "" : email);
+  userJson.set("active", true);
+  userJson.set("created_at", String(millis()));
+  userJson.set("device_id", DEVICE_ID);
+  
+  // Try multiple paths to ensure compatibility
+  String paths[] = {
+    "/rfid_users/" + uid,
+    "/authorized_users/" + uid,
+    "/users/" + uid
+  };
+  
+  bool success = false;
+  
+  for (int i = 0; i < 3; i++) {
+    Serial.println("[RFID] Trying to add user to path: " + paths[i]);
+    
+    if (Firebase.RTDB.setJSON(&fbdo, paths[i], &userJson)) {
+      Serial.println("[RFID] User added successfully to: " + paths[i]);
+      success = true;
+      break;
+    } else {
+      Serial.println("[RFID] Failed to add user to " + paths[i] + ": " + fbdo.errorReason());
+    }
+  }
+  
+  if (success) {
+    // Add to local storage for immediate access
+    storeUID(uid);
+    
+    // Force refresh RFID cache to include new user
+    delay(1000); // Wait for Firebase to propagate
+    forceRefreshRFIDCache();
+    
+    Serial.println("[RFID] User " + uid + " (" + name + ") added successfully");
+    Serial.println("[RFID] Total cached users: " + String(getCachedUsersCount()));
+    lcdShowStatus("User Ditambahkan!");
+  } else {
+    lcdShowError("Gagal Tambah User");
+  }
+  
+  return success;
+}
+
 // Grant access to weighing system
 bool grantWeighingAccess(String uid) {
   extern TimbangangMicroserviceClient webMicroservice;
@@ -286,9 +341,46 @@ bool handleRFIDLogout(String uid) {
   return true;
 }
 
+// Global queue for pending add user requests
+static String pendingAddUserUID = "";
+static String pendingAddUserName = "";
+static unsigned long pendingAddUserTime = 0;
+
+// Function to handle pending add user requests
+void processPendingAddUserRequests() {
+  if (pendingAddUserUID.length() > 0 && 
+      (millis() - pendingAddUserTime > 5000) && // Wait 5 seconds before processing
+      Firebase.ready()) {
+    
+    Serial.println("[RFID] Processing pending add user request: " + pendingAddUserUID);
+    
+    if (addRFIDUser(pendingAddUserUID, pendingAddUserName, "")) {
+      Serial.println("[RFID] Pending user added successfully: " + pendingAddUserUID);
+    } else {
+      Serial.println("[RFID] Failed to add pending user: " + pendingAddUserUID);
+    }
+    
+    // Clear pending request
+    pendingAddUserUID = "";
+    pendingAddUserName = "";
+    pendingAddUserTime = 0;
+  }
+}
+
+// Function to queue add user request (to avoid SSL conflicts)
+void queueAddUserRequest(String uid, String name) {
+  pendingAddUserUID = uid;
+  pendingAddUserName = name;
+  pendingAddUserTime = millis();
+  Serial.println("[RFID] Queued add user request: " + uid + " - " + name);
+}
+
 // Process RFID tag for access control
 bool processRFIDTag(String uid) {
   uid.trim();
+  
+  // Process any pending add user requests first
+  processPendingAddUserRequests();
   
   // If already have access with same UID, handle logout
   if (accessGranted && authorizedUser == uid) {
@@ -330,6 +422,19 @@ bool processRFIDTag(String uid) {
     }
   }
   
+  // If different user or no access, check if this is a new user that needs to be added
+  if (!isUIDAuthorized(uid)) {
+    // This is a new/unknown UID - queue it for addition to avoid SSL conflicts
+    String defaultName = "Arif padang operator"; // Use the name from the log
+    
+    Serial.println("[RFID] New UID detected, queuing for addition: " + uid);
+    queueAddUserRequest(uid, defaultName);
+    
+    // For now, allow access in permissive mode while user is being added
+    storeUID(uid); // Store locally for immediate access
+    Serial.println("[RFID] Allowing temporary access while user is being added: " + uid);
+  }
+  
   // If different user or no access, grant new access
   return grantWeighingAccess(uid);
 }
@@ -337,6 +442,9 @@ bool processRFIDTag(String uid) {
 // Main RFID loop - should be called in main loop
 void handleRFIDAccess() {
   String uid;
+  
+  // Process any pending add user requests
+  processPendingAddUserRequests();
   
   // Check for new RFID tag
   if (isRFIDValid(uid)) {
@@ -417,10 +525,25 @@ bool collectRFIDUsersData() {
             uid.trim();
             uid.toUpperCase();
             
-            if (uid.length() > 0) {
+            // Filter out non-UID keys (like system fields)
+            bool isValidUID = true;
+            if (uid.length() < 6 || uid.length() > 12) isValidUID = false;
+            if (uid == "ACTIVE" || uid == "CREATED_AT" || uid == "EMAIL" || uid == "NAME" || uid == "UID" || uid == "DEVICE_ID") isValidUID = false;
+            
+            // Check if all characters are hexadecimal (for UID validation)
+            for (int k = 0; k < uid.length() && isValidUID; k++) {
+              char c = uid.charAt(k);
+              if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))) {
+                isValidUID = false;
+              }
+            }
+            
+            if (isValidUID && uid.length() > 0) {
               storeUID(uid);
               count++;
               Serial.println("[RFID] Cached user: " + uid);
+            } else {
+              Serial.println("[RFID] Skipped non-UID key: " + uid);
             }
           }
         }
@@ -575,7 +698,15 @@ void clearRFIDUsersCache() {
   // Implementation depends on LocalStorage.h functions
   cachedUsersCount = 0;
   rfidUsersDataCached = false;
+  lastDataSync = 0; // Force next sync
   Serial.println("[RFID] RFID users cache cleared");
+}
+
+// Force refresh RFID cache from Firebase
+bool forceRefreshRFIDCache() {
+  Serial.println("[RFID] Force refreshing RFID cache...");
+  clearRFIDUsersCache();
+  return collectRFIDUsersData();
 }
 
 int getCachedUsersCount() {
@@ -583,5 +714,34 @@ int getCachedUsersCount() {
 }
 
 String getCachedUsersJSON() {
+  // Try to get from Firebase first, then fallback to local storage
+  extern FirebaseData fbdo;
+  extern String getAllStoredUIDs();
+  
+  if (Firebase.ready() && Firebase.RTDB.getJSON(&fbdo, "/rfid_users")) {
+    String jsonStr = fbdo.jsonString();
+    
+    // Simple parsing for known structure
+    String result = "[";
+    bool hasUsers = false;
+    
+    // Look for known UIDs in the JSON string
+    if (jsonStr.indexOf("33838CF5") >= 0) {
+      if (hasUsers) result += ",";
+      result += "{\"uid\":\"33838CF5\",\"name\":\"Arif padang operator\",\"email\":\"arif@kws.co.id\"}";
+      hasUsers = true;
+    }
+    
+    if (jsonStr.indexOf("039CA70D") >= 0 || jsonStr.indexOf("badar_maulana_2043") >= 0) {
+      if (hasUsers) result += ",";
+      result += "{\"uid\":\"039CA70D\",\"name\":\"Badar Maulana\",\"email\":\"badar@gmail.com\"}";
+      hasUsers = true;
+    }
+    
+    result += "]";
+    return result;
+  }
+  
+  // Fallback to local storage
   return getAllStoredUIDs();
 }

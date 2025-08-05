@@ -12,8 +12,8 @@
  * @brief Konfigurasi koneksi WiFi
  * @details SSID dan password untuk koneksi ke jaringan WiFi lokal
  */
-#define WIFI_SSID "HUAWEI-qKN3"        // Nama jaringan WiFi
-#define WIFI_PASSWORD "calyaf1886jj"    // Password jaringan WiFi
+#define WIFI_SSID "hangker"        // Nama jaringan WiFi
+#define WIFI_PASSWORD "cyber123"    // Password jaringan WiFi
 
 // ==================== FIREBASE CONFIGURATION ====================
 /**

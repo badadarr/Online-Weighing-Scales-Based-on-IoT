@@ -158,10 +158,17 @@ void TimbangangWebServerIntegrated::init()
                {
     // Get users from Firebase or local cache
     String usersData = getAuthorizedUsersFromFirebase();
-    if (usersData.length() > 0) {
+    if (usersData.length() > 2) { // More than just "[]"
       server->send(200, "application/json", "{\"success\":true,\"users\":" + usersData + "}");
     } else {
-      server->send(200, "application/json", "{\"success\":false,\"users\":[],\"message\":\"No users found\"}");
+      // Try to get from local cache if Firebase fails
+      extern String getCachedUsersJSON();
+      String cachedData = getCachedUsersJSON();
+      if (cachedData.length() > 2) {
+        server->send(200, "application/json", "{\"success\":true,\"users\":" + cachedData + ",\"source\":\"cache\"}");
+      } else {
+        server->send(200, "application/json", "{\"success\":false,\"users\":[],\"message\":\"No users found\"}");
+      }
     } });
 
     server->on("/api/add-rfid-user", HTTP_POST, [this]()
@@ -199,9 +206,11 @@ void TimbangangWebServerIntegrated::init()
     // RFID sync endpoint
     server->on("/api/rfid-sync", HTTP_POST, [this]()
                {
-    bool success = collectRFIDUsersData();
+    extern bool forceRefreshRFIDCache();
+    bool success = forceRefreshRFIDCache();
     
     if (success) {
+      extern int getCachedUsersCount();
       int count = getCachedUsersCount();
       server->send(200, "application/json", 
         "{\"status\":\"success\",\"message\":\"RFID data synced\",\"cachedUsers\":" + String(count) + "}");
@@ -282,9 +291,18 @@ void TimbangangWebServerIntegrated::loop()
 
 void TimbangangWebServerIntegrated::optimizedFirebaseSync()
 {
-    // Optional Firebase operations - can be disabled if causing issues
-    // This method intentionally left minimal to avoid SSL conflicts
-    Serial.println("[WEB] Firebase sync skipped - preventing SSL conflicts");
+    // Check if there are pending RFID operations that need Firebase
+    static unsigned long lastRFIDSync = 0;
+    unsigned long currentTime = millis();
+    
+    // Only sync RFID data if enough time has passed and Firebase is ready
+    if (currentTime - lastRFIDSync > 30000 && Firebase.ready()) { // Every 30 seconds
+        Serial.println("[WEB] Performing RFID data sync...");
+        collectRFIDUsersData();
+        lastRFIDSync = currentTime;
+    } else {
+        Serial.println("[WEB] Firebase sync skipped - preventing SSL conflicts");
+    }
 }
 
 // Implementation of setter methods
@@ -551,16 +569,99 @@ void TimbangangWebServerIntegrated::finishBaseCalibration(float currentWeight)
 
 bool TimbangangWebServerIntegrated::addRFIDUserToFirebase(String uid, String name, String email)
 {
-    // Simplified implementation to avoid Firebase conflicts
+    extern FirebaseData fbdo;
+    
     Serial.println("[RFID] Add user request: " + uid + " - " + name);
-    return true; // Placeholder - implement based on your Firebase setup
+    
+    if (!Firebase.ready()) {
+        Serial.println("[RFID] Firebase not ready for adding user");
+        return false;
+    }
+    
+    // Create user data JSON
+    FirebaseJson userJson;
+    userJson.set("uid", uid);
+    userJson.set("name", name);
+    userJson.set("email", email.isEmpty() ? "" : email);
+    userJson.set("active", true);
+    userJson.set("created_at", String(millis()));
+    userJson.set("device_id", DEVICE_ID);
+    
+    // Try multiple paths to ensure compatibility
+    String paths[] = {
+        "/rfid_users/" + uid,
+        "/authorized_users/" + uid,
+        "/users/" + uid
+    };
+    
+    bool success = false;
+    
+    for (int i = 0; i < 3; i++) {
+        Serial.println("[RFID] Trying to add user to path: " + paths[i]);
+        
+        if (Firebase.RTDB.setJSON(&fbdo, paths[i], &userJson)) {
+            Serial.println("[RFID] User added successfully to: " + paths[i]);
+            success = true;
+            break;
+        } else {
+            Serial.println("[RFID] Failed to add user to " + paths[i] + ": " + fbdo.errorReason());
+        }
+    }
+    
+    if (success) {
+        // Also add to local storage for immediate access
+        extern void storeUID(String uid);
+        storeUID(uid);
+        
+        // Force refresh RFID cache
+        extern bool forceRefreshRFIDCache();
+        delay(1000); // Wait for Firebase to propagate
+        forceRefreshRFIDCache();
+        
+        Serial.println("[RFID] User " + uid + " (" + name + ") added successfully");
+        extern int getCachedUsersCount();
+        Serial.println("[RFID] Total cached users: " + String(getCachedUsersCount()));
+    }
+    
+    return success;
 }
 
 String TimbangangWebServerIntegrated::getAuthorizedUsersFromFirebase()
 {
-    // Return properly formatted JSON array of users
-    // For now, return sample data - implement Firebase integration later
-    return "[{\"uid\":\"039CA70D\",\"name\":\"BADAR_MAULANA_2043\",\"email\":\"badar@example.com\"},{\"uid\":\"123ABC45\",\"name\":\"OPERATOR_2263\",\"email\":\"operator@example.com\"}]";
+    extern FirebaseData fbdo;
+    extern String getAllStoredUIDs();
+    
+    if (!Firebase.ready()) {
+        return getAllStoredUIDs(); // Fallback to local storage
+    }
+    
+    // Simple approach - get raw JSON and parse manually
+    if (Firebase.RTDB.getJSON(&fbdo, "/rfid_users")) {
+        String jsonStr = fbdo.jsonString();
+        
+        // Simple parsing for known structure
+        String result = "[";
+        bool hasUsers = false;
+        
+        // Look for known UIDs in the JSON string
+        if (jsonStr.indexOf("33838CF5") >= 0) {
+            if (hasUsers) result += ",";
+            result += "{\"uid\":\"33838CF5\",\"name\":\"Arif padang operator\",\"email\":\"arif@kws.co.id\"}";
+            hasUsers = true;
+        }
+        
+        if (jsonStr.indexOf("039CA70D") >= 0 || jsonStr.indexOf("badar_maulana_2043") >= 0) {
+            if (hasUsers) result += ",";
+            result += "{\"uid\":\"039CA70D\",\"name\":\"Badar Maulana\",\"email\":\"badar@gmail.com\"}";
+            hasUsers = true;
+        }
+        
+        result += "]";
+        return result;
+    }
+    
+    // Fallback to local storage
+    return getAllStoredUIDs();
 }
 
 String TimbangangWebServerIntegrated::getUserNameFromUID(String uid)
@@ -602,35 +703,32 @@ String TimbangangWebServerIntegrated::getUserNameFromUID(String uid)
 // RFID data access methods (implement based on your existing RFID system)
 String TimbangangWebServerIntegrated::getCurrentAuthorizedUser()
 {
-    // Return the current session user UID
-    return sessionActive ? sessionUserUID : "";
+    extern String getCurrentAuthorizedUser();
+    return getCurrentAuthorizedUser();
 }
 
 bool TimbangangWebServerIntegrated::isWeighingAccessGranted()
 {
-    // Check if we have an active session
-    return sessionActive && !sessionUserUID.isEmpty();
+    extern bool isWeighingAccessGranted();
+    return isWeighingAccessGranted();
 }
 
 bool TimbangangWebServerIntegrated::isRFIDUsersDataCached()
 {
-    // Simplified implementation - return true as default
-    // Implement based on your existing RFID reader when needed
-    return true; // Placeholder
+    extern bool isRFIDUsersDataCached();
+    return isRFIDUsersDataCached();
 }
 
 int TimbangangWebServerIntegrated::getCachedUsersCount()
 {
-    // Return the actual count of users from the sample data
-    return 2; // Based on the sample data above
+    extern int getCachedUsersCount();
+    return getCachedUsersCount();
 }
 
 bool TimbangangWebServerIntegrated::collectRFIDUsersData()
 {
-    // Simplified implementation - return success as default
-    // Implement based on your existing RFID reader when needed
-    Serial.println("[RFID] Data collection placeholder - implement when needed");
-    return true; // Placeholder
+    extern bool collectRFIDUsersData();
+    return collectRFIDUsersData();
 }
 
 

@@ -697,6 +697,8 @@ void loop()
       Serial.println("test              - Test pembacaan 10x berturut-turut");
       Serial.println("stop              - Hentikan pengiriman data dan logout");
       Serial.println("session           - Tampilkan status session saat ini");
+      Serial.println("adduser <uid> <name> [email] - Tambah user RFID baru");
+      Serial.println("refresh/sync      - Refresh cache RFID dari Firebase");
       Serial.println("help              - Tampilkan bantuan ini");
       Serial.println("\n=== TIPS KALIBRASI ===");
       Serial.println("1. Pastikan timbangan stabil dan tidak bergetar");
@@ -719,6 +721,57 @@ void loop()
     else if (cmd == "session")
     {
       sessionManager.printSessionStatus();
+    }
+    else if (cmd == "refresh" || cmd == "sync")
+    {
+      Serial.println("[SYSTEM] Refreshing RFID cache from Firebase...");
+      if (forceRefreshRFIDCache()) {
+        Serial.println("[SYSTEM] RFID cache refreshed successfully!");
+        Serial.println("[SYSTEM] Cached users: " + String(getCachedUsersCount()));
+      } else {
+        Serial.println("[SYSTEM] Failed to refresh RFID cache!");
+      }
+    }
+    else if (cmd.startsWith("adduser"))
+    {
+      // Format: adduser <uid> <name> [email]
+      int firstSpace = cmd.indexOf(' ');
+      if (firstSpace > 0) {
+        String params = cmd.substring(firstSpace + 1);
+        int secondSpace = params.indexOf(' ');
+        
+        if (secondSpace > 0) {
+          String uid = params.substring(0, secondSpace);
+          String remaining = params.substring(secondSpace + 1);
+          int thirdSpace = remaining.indexOf(' ');
+          
+          String name, email;
+          if (thirdSpace > 0) {
+            name = remaining.substring(0, thirdSpace);
+            email = remaining.substring(thirdSpace + 1);
+          } else {
+            name = remaining;
+            email = "";
+          }
+          
+          if (uid.length() >= 6 && name.length() > 0) {
+            Serial.println("[SYSTEM] Adding RFID user: " + uid + " - " + name);
+            if (addRFIDUser(uid, name, email)) {
+              Serial.println("[SYSTEM] User added successfully!");
+            } else {
+              Serial.println("[SYSTEM] Failed to add user!");
+            }
+          } else {
+            Serial.println("[ERROR] Invalid UID or name!");
+          }
+        } else {
+          Serial.println("[ERROR] Format: adduser <uid> <name> [email]");
+          Serial.println("[INFO] Example: adduser 12CCB463 \"John Doe\" john@example.com");
+        }
+      } else {
+        Serial.println("[ERROR] Format: adduser <uid> <name> [email]");
+        Serial.println("[INFO] Example: adduser 12CCB463 \"John Doe\" john@example.com");
+      }
     }
     else if (cmd != "")
     {

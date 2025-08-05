@@ -37,7 +37,7 @@ void storeUID(String uid) {
 }
 
 String getAllStoredUIDs() {
-  String json = "{\"success\":true,\"users\":[";
+  String json = "[";
   bool first = true;
   
   for (int i = EEPROM_ADDR_UID; i < EEPROM_SIZE; i += 32) {
@@ -50,12 +50,12 @@ String getAllStoredUIDs() {
     
     if (stored.length() > 0) {
       if (!first) json += ",";
-      json += "{\"uid\":\"" + stored + "\",\"name\":\"User " + stored.substring(0,4) + "\"}";
+      json += "{\"uid\":\"" + stored + "\",\"name\":\"User " + stored.substring(0,4) + "\",\"email\":\"\"}";
       first = false;
     }
   }
   
-  json += "]}";
+  json += "]";
   return json;
 }
 
