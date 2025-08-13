@@ -82,6 +82,8 @@
 #define WEIGHT_READ_INTERVAL_MS 200 // Reduced weight reading frequency
 #define WEB_UPDATE_INTERVAL_MS 1000 // Reduced web update frequency
 #define LCD_UPDATE_INTERVAL_MS 500  // Reduced LCD update frequency
+// UI timing
+#define IP_DISPLAY_DURATION_MS 15000 // Tampilkan IP di LCD selama 15 detik
 
 // Task Management Configuration
 #define WEB_SERVER_CHECK_INTERVAL_MS 100    // Web server check interval

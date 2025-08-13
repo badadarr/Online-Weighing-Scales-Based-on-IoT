@@ -46,6 +46,8 @@ static bool lastStableState = false;
 
 // NEW: Function declarations
 bool isWeightStable(float weight);
+// NEW: UI helper state
+static unsigned long lcdTempMessageUntil = 0; // hold temporary LCD messages
 
 /**
  * @brief Fungsi setup() - Inisialisasi sistem saat startup
@@ -76,6 +78,11 @@ void setup()
   setupLCD();
   lcdShowStatus("Booting System...");
   lcdShowStatus("Inisialisasi...");
+
+  // Konfigurasi tombol (gunakan pull-up internal)
+  pinMode(UP_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(DOWN_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(ENTER_BUTTON_PIN, INPUT_PULLUP);
 
   // Inisialisasi WiFi, NTP, EEPROM, dan Firebase
   lcdShowStatus("Inis WiFi...");
@@ -360,7 +367,11 @@ void loop()
   static unsigned long lastLCDUpdate = 0;
   if (currentTime - lastLCDUpdate >= LCD_UPDATE_INTERVAL_MS)
   {
-    lcdShowBerat(beratDisplay); // Use corrected display weight
+    // Jika sedang menampilkan pesan sementara (misal IP), jangan timpa dulu
+    if (lcdTempMessageUntil && currentTime < lcdTempMessageUntil) {
+      lastLCDUpdate = currentTime;
+    } else {
+      lcdShowBerat(beratDisplay); // Use corrected display weight
     
     // Show base mode status on LCD
     static unsigned long lastBaseModeDisplay = 0;
@@ -369,7 +380,8 @@ void loop()
       lastBaseModeDisplay = currentTime;
     }
     
-    lastLCDUpdate = currentTime;
+      lastLCDUpdate = currentTime;
+    }
   }
 
   // Sistem tunggu stabil sebelum kirim ke DB
@@ -563,6 +575,50 @@ void loop()
   if (currentTime - lastTareCheck >= 50)
   { // Check every 50ms
     updateTareButton();
+
+    // Tambah handling untuk tombol UP/DOWN/ENTER (deteksi tepi)
+    static uint8_t lastUp = HIGH, lastDown = HIGH, lastEnter = HIGH;
+    uint8_t up = digitalRead(UP_BUTTON_PIN);
+    uint8_t down = digitalRead(DOWN_BUTTON_PIN);
+    uint8_t enter = digitalRead(ENTER_BUTTON_PIN);
+
+    // UP: tampilkan IP web di LCD selama 5 detik
+    if (lastUp == HIGH && up == LOW) {
+      String ip = webServer.getWebServerIP();
+      if (ip.length() == 0) {
+        ip = WiFi.localIP().toString();
+      }
+      lcdShowIP(ip);
+      Serial.println("[UI] Show IP: http://" + ip);
+  buzz(60);
+  lcdTempMessageUntil = millis() + IP_DISPLAY_DURATION_MS; // tahan sesuai konfigurasi
+    }
+
+    // DOWN: aktifkan base/alas/tatakan
+    if (lastDown == HIGH && down == LOW) {
+      webServer.setBaseMode(true);
+      lcdClear();
+      lcdShowStatus("Base Mode: ON");
+      Serial.println("[UI] Base mode ENABLED (DOWN)");
+      setColor(0, 120, 255);
+      buzz(80);
+      lcdTempMessageUntil = millis() + 1500;
+    }
+
+    // ENTER: kembali ke mode normal (base OFF)
+    if (lastEnter == HIGH && enter == LOW) {
+      webServer.setBaseMode(false);
+      lcdClear();
+      lcdShowStatus("Normal Mode");
+      Serial.println("[UI] Base mode DISABLED (ENTER)");
+      setColor(0, 255, 0);
+      buzz(120);
+      lcdTempMessageUntil = millis() + 1500;
+    }
+
+    lastUp = up;
+    lastDown = down;
+    lastEnter = enter;
     lastTareCheck = currentTime;
   }
   /////////////////////////

@@ -139,3 +139,19 @@ void lcdShowBaseMode(bool baseMode, float baseWeight) {
   }
 }
 
+void lcdShowIP(String ip) {
+  // Tampilkan URL http://<ip> ke 2 baris, maksimal 16 char per baris
+  String url = String("http://") + ip;
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  // Baris 1
+  lcd.print(url.substring(0, 16));
+  lcd.setCursor(0, 1);
+  // Baris 2 (lanjutan bila ada)
+  if (url.length() > 16) {
+    lcd.print(url.substring(16, min(32, (int)url.length())));
+  } else {
+    lcd.print("                ");
+  }
+}
+
