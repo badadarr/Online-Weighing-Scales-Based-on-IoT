@@ -12,8 +12,8 @@
  * @brief Konfigurasi koneksi WiFi
  * @details SSID dan password untuk koneksi ke jaringan WiFi lokal
  */
-#define WIFI_SSID "hangker"        // Nama jaringan WiFi
-#define WIFI_PASSWORD "cyber123"    // Password jaringan WiFi
+#define WIFI_SSID "redmi_9"        // Nama jaringan WiFi
+#define WIFI_PASSWORD "astagfirullah"    // Password jaringan WiFi
 
 // ==================== FIREBASE CONFIGURATION ====================
 /**
@@ -118,3 +118,22 @@
 #define SESSION_INACTIVE_LED COLOR_RED  // LED color when session is inactive
 #define SESSION_LOGIN_SOUND BUZZ_SUCCESS  // Sound when logging in
 #define SESSION_LOGOUT_SOUND BUZZ_ERROR  // Sound when logging out
+
+// ==================== DEMO/BYPASS CONFIGURATION ====================
+/**
+ * @brief RFID bypass mode for demo/emergency
+ * @details Set BYPASS_RFID to 1 to skip RFID and allow weighing/sending without user session.
+ *          Disable by setting to 0 once hardware is ready.
+ */
+#ifndef BYPASS_RFID
+#define BYPASS_RFID 1
+#endif
+
+// Displayed name/UID when bypass is active
+#ifndef BYPASS_USER_NAME
+#define BYPASS_USER_NAME "Guest"
+#endif
+
+#ifndef BYPASS_USER_UID
+#define BYPASS_USER_UID "BYPASS"
+#endif

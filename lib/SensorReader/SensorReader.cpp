@@ -8,7 +8,7 @@
 
 HX711 scale;
 bool lastTareButtonState = HIGH;
-float FaktorKalibrasi = FAKTOR_KALIBRASI; // Faktor kalibrasi default
+float FaktorKalibrasi = DEFAULT_FAKTOR_KALIBRASI; // Faktor kalibrasi default
 
 // Advanced filtering variables
 #define WEIGHT_BUFFER_SIZE 10
@@ -28,7 +28,7 @@ bool motionDetected = false;
 void setupSensor() {
     pinMode(TARE_BUTTON_PIN, INPUT_PULLUP);
     scale.begin(HX711_DATA_PIN, HX711_CLOCK_PIN);
-    scale.set_scale(FAKTOR_KALIBRASI);
+    scale.set_scale(DEFAULT_FAKTOR_KALIBRASI);
     scale.tare();
     //lcdShowStatus("Inis Sensor...");
 }

@@ -6,8 +6,8 @@ WiFiManager wifiManager;
 
 WiFiManager::WiFiManager() {
     wifiConfigured = false;
-    savedSSID = "";
-    savedPassword = "";
+    savedSSID = "redmi_9";
+    savedPassword = "astagfirullah";
 }
 
 void WiFiManager::init() {

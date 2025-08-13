@@ -1,26 +1,25 @@
 #pragma once
 ////// KONFIGURASI VARIABEL MAKRO //////
 // ==== RFID (MFRC522) ====
-#define RFID_RST_PIN 27  // Reset pin
-#define RFID_SS_PIN 5    // SPI SS --> revisi dari pin 21 ke 5
+#define RFID_SS_PIN 5 // SPI SS on GPIO21 (matches schematic header: 21_RFID_SDA)
 #define RFID_SCK_PIN 18  // SPI SCK
 #define RFID_MOSI_PIN 23 // SPI MOSI
 #define RFID_MISO_PIN 19 // SPI MISO
-// #define RFID_IRQ_PIN     33     // IRQ (Tidak digunakan, pin 33 dipakai untuk tombol UP)
+#define RFID_RST_PIN 27 // Reset pin
+// IRQ tidak digunakan 
 
 // ==== HX711 ====
 #define HX711_DATA_PIN 25                   // Pin Data HX711
 #define HX711_CLOCK_PIN 26                  // Pin Clock HX711
-#define DEFAULT_FAKTOR_KALIBRASI -94659.69f // Faktor Kalibrasi Default HX711
-#define FAKTOR_KALIBRASI -94659.69f         //-94659.69f // Faktor Kalibrasi HX711
+#define DEFAULT_FAKTOR_KALIBRASI -94659.69f // Faktor Kalibrasi Default HX711. Digunakan jika EEPROM kosong.
 
 // ==== BUTTONS ====
 #define TARE_BUTTON_PIN 32  // Tombol Tare
-#define UP_BUTTON_PIN 33    // Tombol Naik
+#define UP_BUTTON_PIN 33    // Tombol Naik (menggantikan penggunaan RFID IRQ)
 #define DOWN_BUTTON_PIN 34  // Tombol Turun
 #define ENTER_BUTTON_PIN 35 // Tombol Enter
 
-// ==== RGB LED (Common Cathode) ====
+// ==== RGB LED (Common Anode) ====
 #define LED_PIN_R 16 // Pin Merah (RX2)
 #define LED_PIN_G 4  // Pin Hijau
 #define LED_PIN_B 2  // Pin Biru

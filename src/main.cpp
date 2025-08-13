@@ -82,7 +82,13 @@ void setup()
   connectWiFi();
   syncTime();
   initEEPROM();
+  // RFID init (skipped in bypass mode)
+#if BYPASS_RFID
+  Serial.println("[RFID] BYPASS enabled. Skipping RFID init.");
+  lcdShowStatus("RFID Bypass Mode");
+#else
   setupRFID();     // Inisialisasi RFID reader
+#endif
   setupSensor();   // Inisialisasi sensor
   setupFirebase(); // Inisialisasi server / firebase
   
@@ -137,11 +143,20 @@ void loop()
   }
   lastLoop = currentTime;
 
-  // Handle RFID access control first
+  // Handle RFID access control first (skip when bypass)
+#if BYPASS_RFID
+  // No RFID handling in bypass
+#else
   handleRFIDAccess();
+#endif
   
-  // Check if weighing access is granted before proceeding
-  if (!isWeighingAccessGranted()) {
+  // Check if weighing access is granted before proceeding (always granted in bypass)
+#if BYPASS_RFID
+  bool accessGranted = true;
+#else
+  bool accessGranted = isWeighingAccessGranted();
+#endif
+  if (!accessGranted) {
     // No access granted - show waiting message and skip weighing operations
     static unsigned long lastAccessMsg = 0;
     if (currentTime - lastAccessMsg > 5000) {
@@ -170,12 +185,16 @@ void loop()
     }
   }
   
-  // Extend access time when weighing activity detected (less frequent)
+  // Extend access time when weighing activity detected (skip in bypass)
+#if BYPASS_RFID
+  // No session extension needed
+#else
   static unsigned long lastWeighingActivity = 0;
   if (currentTime - lastWeighingActivity > 10000) { // Every 10 seconds instead of 1 second
     extendAccess();
     lastWeighingActivity = currentTime;
   }
+#endif
 
   // Handle web server requests (optimized with yield)
   webServer.handleClient();
@@ -202,10 +221,17 @@ void loop()
   
   if (webStopRequested) {
     Serial.println("[WEB] Resetting access via web request");
-    resetAccess();
-    sendingActive = false;
-    lastStableState = false;
-    lcdShowStatus("Access Reset");
+#if BYPASS_RFID
+  // In bypass, don't reset session; just pause sending
+  sendingActive = false;
+  lastStableState = false;
+  lcdShowStatus("Bypass: Stopped");
+#else
+  resetAccess();
+  sendingActive = false;
+  lastStableState = false;
+  lcdShowStatus("Access Reset");
+#endif
     webStopRequested = false;
   }
   
@@ -386,8 +412,14 @@ void loop()
       }
       else if (stableDuration >= STABLE_DURATION_MS)
       {
-        // Only send to Firebase if session is active
-        if (sessionManager.isSessionActive() && sendingActive) {
+  // Allow sending when bypassing even without a session
+  if (
+#if BYPASS_RFID
+      true
+#else
+      (sessionManager.isSessionActive() && sendingActive)
+#endif
+  ) {
           // Sudah stabil cukup lama, kirim ke Firebase
           webServer.setStabilizationStatus("sending", 0);
           sendBeratKeFirebase(berat);
@@ -538,13 +570,21 @@ void loop()
   // Access is already validated, system can proceed with weighing
   
   // Get current authorized user
+#if BYPASS_RFID
+  String currentUser = String(BYPASS_USER_NAME) + " (Bypass)";
+#else
   String currentUser = getCurrentAuthorizedUser();
+#endif
   
   // Update web server with current user info
   webServer.setRFIDStatus(currentUser);
 
   // Only extend access time when weighing, don't send data continuously
-  if (isWeighingAccessGranted() && sessionManager.isSessionActive() && berat != "")
+#if BYPASS_RFID
+  // Always allow sending during bypass
+  sendingActive = true;
+#else
+  if (accessGranted && sessionManager.isSessionActive() && berat != "")
   { 
     // Set sending active only when session is active
     sendingActive = sessionManager.isSessionActive();
@@ -553,6 +593,7 @@ void loop()
     // Set sending inactive when no session
     sendingActive = false;
   }
+#endif
 
   // Cek perintah dari Serial Monitor
   if (Serial.available())
@@ -688,7 +729,7 @@ void loop()
       }
       Serial.println("=== TEST SELESAI ===");
     }
-    else if (cmd == "help")
+  else if (cmd == "help")
     {
       Serial.println("\n=== PERINTAH YANG TERSEDIA ===");
       Serial.println("kalibrasi <berat> - Kalibrasi dengan berat standar (contoh: kalibrasi 1.0)");
@@ -709,14 +750,21 @@ void loop()
     }
     else if (cmd == "stop")
     {
-      if (sessionManager.isSessionActive()) {
-        sessionManager.logout();
-      }
-      sendingActive = false;
-      lastStableState = false;
-      Serial.println("[SYSTEM] Pengiriman data ke Firebase dihentikan");
-      Serial.println("[INFO] Scan RFID untuk login kembali");
-      lcdShowStatus("Logged Out");
+#if BYPASS_RFID
+  sendingActive = false;
+  lastStableState = false;
+  Serial.println("[SYSTEM] BYPASS: Pengiriman dihentikan sementara");
+  lcdShowStatus("Bypass: Stopped");
+#else
+  if (sessionManager.isSessionActive()) {
+    sessionManager.logout();
+  }
+  sendingActive = false;
+  lastStableState = false;
+  Serial.println("[SYSTEM] Pengiriman data ke Firebase dihentikan");
+  Serial.println("[INFO] Scan RFID untuk login kembali");
+  lcdShowStatus("Logged Out");
+#endif
     }
     else if (cmd == "session")
     {
@@ -724,6 +772,9 @@ void loop()
     }
     else if (cmd == "refresh" || cmd == "sync")
     {
+#if BYPASS_RFID
+      Serial.println("[SYSTEM] Bypass active: skipping RFID cache refresh");
+#else
       Serial.println("[SYSTEM] Refreshing RFID cache from Firebase...");
       if (forceRefreshRFIDCache()) {
         Serial.println("[SYSTEM] RFID cache refreshed successfully!");
@@ -731,6 +782,7 @@ void loop()
       } else {
         Serial.println("[SYSTEM] Failed to refresh RFID cache!");
       }
+#endif
     }
     else if (cmd.startsWith("adduser"))
     {
