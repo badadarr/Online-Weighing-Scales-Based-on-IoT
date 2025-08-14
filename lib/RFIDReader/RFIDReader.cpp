@@ -63,13 +63,22 @@ static unsigned long pendingAddUserTime = 0;
 void setupRFID()
 {
   Serial.begin(115200);
-  SPI.begin(RFID_SCK_PIN, RFID_MISO_PIN, RFID_MOSI_PIN, RFID_SS_PIN);
+  // Gunakan default VSPI mapping (stabil seperti versi Mas Wadi)
+  SPI.begin();
   rfid.PCD_Init();
-  delay(50); // beri waktu modul siap
-  rfid.PCD_SetAntennaGain(rfid.RxGain_max);
+  delay(50);
+  // Set antenna gain to maximum (portable for different library versions)
+  rfid.PCD_SetAntennaGain(0x07 << 4);
+  rfid.PCD_AntennaOn();
 
   Serial.println("[RFID] Inisialisasi MFRC522...");
   lcdShowStatus("Init RFID...");
+
+#if RFID_SKIP_SELF_TEST
+  Serial.println("[RFID] Skip self-test (compat mode)");
+  Serial.println("[RFID] Initialized (compat)");
+  lcdShowStatus("RFID Siap!");
+#else
   if (!rfid.PCD_PerformSelfTest())
   {
     Serial.println("[RFID] Self-test failed");
@@ -80,7 +89,9 @@ void setupRFID()
     Serial.println("[RFID] Initialized successfully");
     lcdShowStatus("RFID Siap!");
   }
-  rfid.PCD_DumpVersionToSerial(); // Dump versi RFID ke Serial untuk debugging
+#endif
+
+  rfid.PCD_DumpVersionToSerial();
 
   // Initialize access control
   resetAccess();
@@ -117,6 +128,7 @@ bool isRFIDValid(String &uid)
   Serial.println(")");
 
   rfid.PICC_HaltA();
+  rfid.PCD_StopCrypto1();
   return true;
 }
 
@@ -135,7 +147,8 @@ bool isUIDAuthorized(String uid)
   // First check local storage for offline capability (now includes cached data)
   if (isUIDStored(uid))
   {
-    Serial.println("[RFID] UID authorized from cache/local: " + uid);
+    Serial.print("[RFID] UID authorized from cache/local: ");
+    Serial.println(uid);
     return true;
   }
 
@@ -150,7 +163,8 @@ bool isUIDAuthorized(String uid)
   // If data is cached but UID not found, and we have users cached, deny access
   if (rfidUsersDataCached && cachedUsersCount > 0)
   {
-    Serial.println("[RFID] UID not found in cached authorized users: " + uid);
+    Serial.print("[RFID] UID not found in cached authorized users: ");
+    Serial.println(uid);
     // Store this UID anyway for future use
     storeUID(uid);
     return true; // Allow access even if not found (permissive mode)
@@ -162,41 +176,48 @@ bool isUIDAuthorized(String uid)
     Serial.println("[RFID] Attempting direct Firebase authorization check...");
 
     // Try multiple paths for authorization
-    String paths[] = {
-        "/rfid_users/" + uid,
-        "/authorized_users/" + uid,
-        "/users/" + uid + "/authorized"};
-
     for (int i = 0; i < 3; i++)
     {
-      Serial.print("[RFID] Checking path: ");
-      Serial.println(paths[i]);
+      String path;
+      if (i == 0)
+        path = String("/rfid_users/") + uid;
+      else if (i == 1)
+        path = String("/authorized_users/") + uid;
+      else
+        path = String("/users/") + uid + "/authorized";
 
-      bool found = Firebase.RTDB.getJSON(&fbdo, paths[i]);
+      Serial.print("[RFID] Checking path: ");
+      Serial.println(path);
+
+      bool found = Firebase.RTDB.getJSON(&fbdo, path);
 
       if (found && fbdo.dataType() == "json")
       {
-        Serial.println("[RFID] UID authorized online: " + uid);
+  Serial.print("[RFID] UID authorized online: ");
+  Serial.println(uid);
         // Store locally for future offline use
         storeUID(uid);
         return true;
       }
       else if (found && fbdo.dataType() == "boolean" && fbdo.to<bool>())
       {
-        Serial.println("[RFID] UID authorized (boolean): " + uid);
+  Serial.print("[RFID] UID authorized (boolean): ");
+  Serial.println(uid);
         storeUID(uid);
         return true;
       }
     }
 
-    Serial.println("[RFID] UID not found in any Firebase path: " + uid);
+  Serial.print("[RFID] UID not found in any Firebase path: ");
+  Serial.println(uid);
     Serial.print("[Firebase Error] Last error: ");
     Serial.println(fbdo.errorReason());
 
     // If we're in permissive mode (no cached data available), allow access for testing
     if (cachedUsersCount == 0 && rfidUsersDataCached)
     {
-      Serial.println("[RFID] PERMISSIVE MODE: Allowing access for testing - " + uid);
+  Serial.print("[RFID] PERMISSIVE MODE: Allowing access for testing - ");
+  Serial.println(uid);
       storeUID(uid); // Store for future use
       return true;
     }
@@ -213,15 +234,22 @@ bool isUIDRegistered(String uid)
 
 void requestRFIDRegistration(String uid)
 {
-  String path = "/authorization_requests/" + uid;
+  String path = "/authorization_requests/";
+  path += uid;
   FirebaseJson json;
   json.set("device_id", DEVICE_ID);
-  json.set("request_time", String(__DATE__) + " " + String(__TIME__));
+  {
+    String rt = String(__DATE__);
+    rt += " ";
+    rt += String(__TIME__);
+    json.set("request_time", rt);
+  }
   json.set("status", "pending");
 
   if (Firebase.RTDB.setJSON(&fbdo, path, &json))
   {
-    Serial.println("[RFID] Authorization request sent for: " + uid);
+  Serial.print("[RFID] Authorization request sent for: ");
+  Serial.println(uid);
     lcdShowStatus("Permintaan Dikirim");
   }
   else
@@ -250,26 +278,31 @@ bool addRFIDUser(String uid, String name, String email)
   userJson.set("device_id", DEVICE_ID);
 
   // Try multiple paths to ensure compatibility
-  String paths[] = {
-      "/rfid_users/" + uid,
-      "/authorized_users/" + uid,
-      "/users/" + uid};
+  String paths[3];
+  paths[0] = String("/rfid_users/") + uid;
+  paths[1] = String("/authorized_users/") + uid;
+  paths[2] = String("/users/") + uid;
 
   bool success = false;
 
   for (int i = 0; i < 3; i++)
   {
-    Serial.println("[RFID] Trying to add user to path: " + paths[i]);
+  Serial.print("[RFID] Trying to add user to path: ");
+  Serial.println(paths[i]);
 
     if (Firebase.RTDB.setJSON(&fbdo, paths[i], &userJson))
     {
-      Serial.println("[RFID] User added successfully to: " + paths[i]);
+  Serial.print("[RFID] User added successfully to: ");
+  Serial.println(paths[i]);
       success = true;
       break;
     }
     else
     {
-      Serial.println("[RFID] Failed to add user to " + paths[i] + ": " + fbdo.errorReason());
+  Serial.print("[RFID] Failed to add user to ");
+  Serial.print(paths[i]);
+  Serial.print(": ");
+  Serial.println(fbdo.errorReason());
     }
   }
 
@@ -282,8 +315,13 @@ bool addRFIDUser(String uid, String name, String email)
     delay(1000); // Wait for Firebase to propagate
     forceRefreshRFIDCache();
 
-    Serial.println("[RFID] User " + uid + " (" + name + ") added successfully");
-    Serial.println("[RFID] Total cached users: " + String(getCachedUsersCount()));
+  Serial.print("[RFID] User ");
+  Serial.print(uid);
+  Serial.print(" (");
+  Serial.print(name);
+  Serial.println(") added successfully");
+  Serial.print("[RFID] Total cached users: ");
+  Serial.println(String(getCachedUsersCount()));
     lcdShowStatus("User Ditambahkan!");
   }
   else
@@ -301,7 +339,8 @@ bool grantWeighingAccess(String uid)
 
   if (!isUIDAuthorized(uid))
   {
-    Serial.println("[ACCESS] Unauthorized UID: " + uid);
+  Serial.print("[ACCESS] Unauthorized UID: ");
+  Serial.println(uid);
     lcdShowError("Akses Ditolak!");
     setColor(255, 0, 0); // Red
     buzz(1000);          // Long buzz for denied
@@ -320,7 +359,8 @@ bool grantWeighingAccess(String uid)
   // Start session with the logged in user
   sessionManager.login(uid);
 
-  Serial.println("[ACCESS] Access granted to: " + uid);
+  Serial.print("[ACCESS] Access granted to: ");
+  Serial.println(uid);
   lcdShowStatus("Akses Diberikan!");
   lcdShowRFID(uid);
   setColor(0, 255, 0); // Green
@@ -450,7 +490,10 @@ void queueAddUserRequest(String uid, String name)
   pendingAddUserUID = uid;
   pendingAddUserName = name;
   pendingAddUserTime = millis();
-  Serial.println("[RFID] Queued add user request: " + uid + " - " + name);
+  Serial.print("[RFID] Queued add user request: ");
+  Serial.print(uid);
+  Serial.print(" - ");
+  Serial.println(name);
 }
 
 // Process RFID tag for access control
@@ -468,7 +511,8 @@ bool processRFIDTag(String uid)
     if (sessionManager.isSessionActive() && sessionManager.getCurrentUserUID() == uid)
     {
       // User wants to logout - same RFID tapped again
-      Serial.println("[ACCESS] Logout detected for: " + uid);
+  Serial.print("[ACCESS] Logout detected for: ");
+  Serial.println(uid);
       lcdShowStatus("Logout...");
       setColor(255, 165, 0); // Orange
       buzz(SESSION_LOGOUT_SOUND);
@@ -495,7 +539,8 @@ bool processRFIDTag(String uid)
     {
       // Not in session yet, just extend access
       extendAccess();
-      Serial.println("[ACCESS] Access extended for: " + uid);
+  Serial.print("[ACCESS] Access extended for: ");
+  Serial.println(uid);
       lcdShowStatus("Akses Diperpanjang");
       setColor(0, 255, 0); // Green
       buzz(100);
@@ -510,7 +555,8 @@ bool processRFIDTag(String uid)
   {
     // Ini adalah UID baru/tidak dikenal. Fungsi isUIDAuthorized sudah menentukan
     // bahwa akses ditolak. Sekarang, kita hanya perlu meminta registrasi.
-    Serial.println("[RFID] Unauthorized UID detected: " + uid);
+  Serial.print("[RFID] Unauthorized UID detected: ");
+  Serial.println(uid);
     // Panggilan grantWeighingAccess di bawah ini akan gagal dan memicu permintaan registrasi.
   }
 
@@ -636,11 +682,13 @@ bool collectRFIDUsersData()
             {
               storeUID(uid);
               count++;
-              Serial.println("[RFID] Cached user: " + uid);
+              Serial.print("[RFID] Cached user: ");
+              Serial.println(uid);
             }
             else
             {
-              Serial.println("[RFID] Skipped non-UID key: " + uid);
+              Serial.print("[RFID] Skipped non-UID key: ");
+              Serial.println(uid);
             }
           }
         }
@@ -744,11 +792,13 @@ bool syncRFIDUsersFromFirebase()
             {
               storeUID(uid);
               count++;
-              Serial.println("[RFID] Cached request user: " + uid);
+              Serial.print("[RFID] Cached request user: ");
+              Serial.println(uid);
             }
             else
             {
-              Serial.println("[RFID] Skipped invalid UID: " + uid);
+              Serial.print("[RFID] Skipped invalid UID: ");
+              Serial.println(uid);
             }
           }
           // For other paths, check if approved/authorized
@@ -762,7 +812,8 @@ bool syncRFIDUsersFromFirebase()
             {
               storeUID(uid);
               count++;
-              Serial.println("[RFID] Cached approved user: " + uid);
+              Serial.print("[RFID] Cached approved user: ");
+              Serial.println(uid);
             }
           }
         }
