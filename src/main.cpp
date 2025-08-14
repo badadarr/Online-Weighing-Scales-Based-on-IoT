@@ -796,6 +796,7 @@ void loop()
       Serial.println("session           - Tampilkan status session saat ini");
       Serial.println("adduser <uid> <name> [email] - Tambah user RFID baru");
       Serial.println("refresh/sync      - Refresh cache RFID dari Firebase");
+  Serial.println("clear_uids        - Hapus semua UID RFID di EEPROM (paksa auto-enroll)");
       Serial.println("help              - Tampilkan bantuan ini");
       Serial.println("\n=== TIPS KALIBRASI ===");
       Serial.println("1. Pastikan timbangan stabil dan tidak bergetar");
@@ -825,6 +826,14 @@ void loop()
     else if (cmd == "session")
     {
       sessionManager.printSessionStatus();
+    }
+    else if (cmd == "clear_uids")
+    {
+      // Hapus semua UID dari EEPROM dan cache
+      clearRFIDUsersCache();
+      Serial.println("[SYSTEM] Semua UID RFID di EEPROM telah dihapus.");
+      Serial.println("[SYSTEM] Scan kartu baru untuk auto-enroll ke /rfid_users.");
+      lcdShowStatus("UID EEPROM Cleared");
     }
     else if (cmd == "refresh" || cmd == "sync")
     {

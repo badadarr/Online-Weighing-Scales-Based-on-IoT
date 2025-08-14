@@ -15,6 +15,20 @@
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "PlatformIO: Build and Upload",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"platformio",
+				"run",
+				"--target",
+				"upload"
+			],
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }

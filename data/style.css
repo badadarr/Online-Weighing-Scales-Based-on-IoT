@@ -149,6 +149,11 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
     padding: 10px;
     border-radius: 5px;
     font-weight: bold;
+
+/* Utility helpers */
+.hidden {
+    display: none;
+}
 }
 
 .response.success {
@@ -243,6 +248,14 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
     padding: 15px;
     border-radius: 5px;
     border: 1px solid #dee2e6;
+}
+
+.mb-12 {
+    margin-bottom: 12px;
+}
+
+.section-soft {
+    background: #f8f9ff;
 }
 
 .config-info div {

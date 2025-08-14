@@ -12,7 +12,7 @@
       ".read": "auth != null || query.orderByChild == 'device_access'",
       ".write": "auth != null && (auth.token.admin == true || auth.uid != null)",
       "$uid": {
-        ".read": "auth != null || query.orderByChild == 'device_access'", 
+        ".read": "auth != null || query.orderByChild == 'device_access'",
         ".write": "auth != null"
       }
     },
@@ -25,7 +25,7 @@
       }
     },
     "authorization_requests": {
-      ".read": "auth != null", 
+      ".read": "auth != null",
       ".write": "auth != null",
       "$uid": {
         ".read": "auth != null",
@@ -59,7 +59,7 @@
           ".write": true
         },
         "log": {
-          ".read": true, 
+          ".read": true,
           ".write": true
         },
         "current": {

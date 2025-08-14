@@ -144,3 +144,35 @@
 #ifndef BYPASS_USER_UID
 #define BYPASS_USER_UID "BYPASS"
 #endif
+
+// ==================== RFID AUTO-ENROLL CONFIG ====================
+// When enabled, unknown UIDs will be created automatically in Firebase and granted access
+#ifndef AUTO_ENROLL_RFID
+#define AUTO_ENROLL_RFID 1
+#endif
+
+#ifndef AUTO_ENROLL_DEFAULT_NAME
+#define AUTO_ENROLL_DEFAULT_NAME "Auto User"
+#endif
+
+#ifndef AUTO_ENROLL_ACTIVE_DEFAULT
+#define AUTO_ENROLL_ACTIVE_DEFAULT 1
+#endif
+
+#ifndef AUTO_ENROLL_COOLDOWN_MS
+#define AUTO_ENROLL_COOLDOWN_MS 3000
+#endif
+
+// ==================== RFID EXCLUSIVE SESSION LOCK ====================
+// Block other UIDs from taking over while a session/access is active
+#ifndef RFID_EXCLUSIVE_SESSION
+#define RFID_EXCLUSIVE_SESSION 1
+#endif
+// Cooldown to rate-limit reject beeps/messages for different UIDs (ms)
+#ifndef RFID_REJECT_DIFFERENT_UID_COOLDOWN_MS
+#define RFID_REJECT_DIFFERENT_UID_COOLDOWN_MS 2000
+#endif
+// How long to show "Sedang dipakai" info (ms)
+#ifndef RFID_EXCLUSIVE_MESSAGE_MS
+#define RFID_EXCLUSIVE_MESSAGE_MS 1500
+#endif

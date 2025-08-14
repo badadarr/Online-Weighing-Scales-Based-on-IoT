@@ -405,43 +405,31 @@
       <div id="users" class="tab-content">
         <div class="section">
           <h2>Manajemen Pengguna RFID</h2>
-          <form id="addUserForm">
+          <div id="rfidInfo" class="config-info mb-12">
+            <div>Status Auto-Enroll: <span id="autoEnrollStatus">Memuat...</span></div>
+            <div>Terakhir di-scan: <span id="lastScan">-</span></div>
+            <div>Total Cached Users: <span id="cachedUsersInfo">0</span></div>
+          </div>
+
+          <div class="section section-soft">
+            <h3>Quick Label untuk Kartu Baru</h3>
             <div class="form-group">
-              <label for="uid">UID RFID:</label>
-              <input
-                type="text"
-                id="uid"
-                name="uid"
-                placeholder="Masukkan UID RFID"
-                required
-              />
+              <label for="quickUID">UID Terakhir:</label>
+              <input type="text" id="quickUID" placeholder="Tap kartu untuk mengisi otomatis" />
             </div>
-
             <div class="form-group">
-              <label for="name">Nama Pengguna:</label>
-              <input
-                type="text"
-                id="name"
-                name="name"
-                placeholder="Masukkan nama pengguna"
-                required
-              />
+              <label for="quickName">Nama:</label>
+              <input type="text" id="quickName" placeholder="Masukkan nama pengguna" />
             </div>
-
             <div class="form-group">
-              <label for="email">Email (opsional):</label>
-              <input
-                type="email"
-                id="email"
-                name="email"
-                placeholder="Masukkan email"
-              />
+              <label for="quickEmail">Email (opsional):</label>
+              <input type="email" id="quickEmail" placeholder="Masukkan email" />
             </div>
+            <button type="button" class="btn btn-success" onclick="labelLastUID()">Simpan Label</button>
+            <button type="button" class="btn btn-warning" onclick="clearRFIDCache()">Clear Cache UID Lokal</button>
+          </div>
 
-            <button type="submit" class="btn">Tambah Pengguna</button>
-          </form>
-
-          <div id="response" class="response"></div>
+          <div id="response" class="response hidden"></div>
 
           <div class="user-list">
             <h3>Pengguna Terdaftar</h3>
@@ -449,6 +437,7 @@
             <button type="button" class="btn" onclick="syncRFIDData()">
               Sinkronisasi Data RFID
             </button>
+            <button type="button" class="btn" onclick="refreshRFIDStatus()">Refresh Status</button>
           </div>
         </div>
       </div>
@@ -461,18 +450,12 @@
         setInterval(updateWeight, 1000);
         setInterval(updateStatus, 2000);
 
-        // Load configuration data
+  // Load configuration data
         loadSystemConfig();
         loadWiFiConfig();
         loadUsers();
+  refreshRFIDStatus();
 
-        // Setup form submission
-        document
-          .getElementById("addUserForm")
-          .addEventListener("submit", function (e) {
-            e.preventDefault();
-            addUser();
-          });
       });
 
       function openTab(tabName) {
@@ -795,59 +778,7 @@
           });
       }
 
-      function addUser() {
-        const uid = document.getElementById("uid").value.trim();
-        const name = document.getElementById("name").value.trim();
-        const email = document.getElementById("email").value.trim();
-
-        if (!uid || !name) {
-          showResponse("Silakan isi semua field", "error");
-          return;
-        }
-
-        // Validate UID format (basic check for hex characters)
-        if (!/^[0-9A-Fa-f\s]+$/.test(uid)) {
-          showResponse(
-            "Format UID tidak valid. Silakan gunakan karakter heksadesimal saja.",
-            "error"
-          );
-          return;
-        }
-
-        const userData = {
-          uid: uid.toUpperCase().replace(/\s+/g, ""),
-          name: name,
-          email: email,
-        };
-
-        fetch("/api/add-rfid-user", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(userData),
-        })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.success) {
-              showResponse("Pengguna berhasil ditambahkan!", "success");
-              document.getElementById("addUserForm").reset();
-              setTimeout(() => {
-                loadUsers();
-              }, 1000);
-            } else {
-              showResponse(
-                "Kesalahan menambah pengguna: " +
-                  (data.message || "Kesalahan tidak diketahui"),
-                "error"
-              );
-            }
-          })
-          .catch((error) => {
-            console.error("Error adding user:", error);
-            showResponse("Kesalahan jaringan. Silakan coba lagi.", "error");
-          });
-      }
+  // Manual add user removed; use Quick Label instead
 
       function loadUsers() {
         const userListDiv = document.getElementById("userList");
@@ -869,6 +800,84 @@
             console.error("Error loading users:", error);
             userListDiv.innerHTML =
               '<div class="user-item">Kesalahan memuat pengguna. Silakan periksa koneksi.</div>';
+          });
+      }
+
+      function refreshRFIDStatus() {
+        fetch("/api/rfid/status")
+          .then((r) => r.json())
+          .then((d) => {
+            document.getElementById("autoEnrollStatus").textContent = d.autoEnrollEnabled
+              ? "AKTIF"
+              : "NONAKTIF";
+            document.getElementById("autoEnrollStatus").style.color = d.autoEnrollEnabled
+              ? "#28a745"
+              : "#dc3545";
+            document.getElementById("cachedUsersInfo").textContent = d.cachedUsers || 0;
+            const last = d.lastUID || "-";
+            document.getElementById("lastScan").textContent = last || "-";
+            if (last && last !== "-") {
+              document.getElementById("quickUID").value = last;
+              if (d.lastUserName && d.lastUserName !== last) {
+                document.getElementById("quickName").placeholder = d.lastUserName;
+              }
+            }
+          })
+          .catch((e) => console.error("Error fetching RFID status:", e));
+      }
+
+      function labelLastUID() {
+        const uid = (document.getElementById("quickUID").value || "").trim();
+        const name = (document.getElementById("quickName").value || "").trim();
+        const email = (document.getElementById("quickEmail").value || "").trim();
+        if (!uid || !name) {
+          showResponse("UID dan Nama wajib diisi", "error");
+          return;
+        }
+        const payload = { uid: uid.toUpperCase(), name, email };
+        fetch("/api/rfid/label", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.success) {
+              showResponse("Label tersimpan", "success");
+              document.getElementById("quickName").value = "";
+              document.getElementById("quickEmail").value = "";
+              setTimeout(() => {
+                loadUsers();
+                refreshRFIDStatus();
+              }, 800);
+            } else {
+              showResponse(d.message || "Gagal menyimpan label", "error");
+            }
+          })
+          .catch((e) => {
+            console.error(e);
+            showResponse("Kesalahan jaringan", "error");
+          });
+      }
+
+      function clearRFIDCache() {
+        if (!confirm("Hapus seluruh UID lokal? Kartu harus auto-enroll ulang saat di-tap.")) return;
+        fetch("/api/rfid/clear-cache", { method: "POST" })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.success) {
+              showResponse("Cache RFID dihapus", "success");
+              setTimeout(() => {
+                refreshRFIDStatus();
+                loadUsers();
+              }, 600);
+            } else {
+              showResponse(d.message || "Gagal menghapus cache", "error");
+            }
+          })
+          .catch((e) => {
+            console.error(e);
+            showResponse("Kesalahan jaringan", "error");
           });
       }
 
@@ -902,23 +911,62 @@
           });
       }
 
-      function displayUsers(users) {
+  function displayUsers(users) {
         const userListDiv = document.getElementById("userList");
         if (!userListDiv) return;
 
-        if (users.length === 0) {
+        // Normalize payload to an array of { uid, name, email, active }
+        let list = [];
+        if (Array.isArray(users)) {
+          list = users;
+        } else if (users && typeof users === "object") {
+          const keys = Object.keys(users);
+          const fieldish = new Set(["uid", "name", "email", "active", "created_at", "device_id"]);
+          const valuesAreObjects = keys.length > 0 && keys.every((k) => typeof users[k] === "object" && users[k] !== null);
+          const looksLikeSingleUser = keys.some((k) => fieldish.has(k)) && !valuesAreObjects;
+
+          if (looksLikeSingleUser) {
+            // Single user object
+            list = [
+              {
+                uid: users.uid || "",
+                name: users.name || "",
+                email: users.email || "",
+                active: users.active,
+              },
+            ];
+          } else if (valuesAreObjects) {
+            // Map keyed by UID -> user object
+            list = keys.map((k) => ({
+              uid: users[k]?.uid || k,
+              name: users[k]?.name || "",
+              email: users[k]?.email || "",
+              active: users[k]?.active,
+            }));
+          }
+        }
+
+        // Filter out accidental property items (e.g., 'active', 'created_at', etc.)
+        const ban = new Set(["active", "created_at", "device_id", "email", "name", "uid"]);
+        list = list.filter((u) => {
+          const nm = (u.name || "").toString().trim().toLowerCase();
+          const looksLikeField = (ban.has(nm) || ban.has((u.uid || "").toString().trim().toLowerCase())) && !u.email && !u.name;
+          return !looksLikeField;
+        });
+
+        if (!list.length) {
           userListDiv.innerHTML =
             '<div class="user-item">Belum ada pengguna terdaftar</div>';
           return;
         }
 
         let html = "";
-        users.forEach((user) => {
+        list.forEach((user) => {
           html += `
                 <div class="user-item">
                     <div class="user-info">
-                        <div class="user-name">${escapeHtml(user.name)}</div>
-                        <div class="user-uid">UID: ${escapeHtml(user.uid)}</div>
+                      <div class="user-name">${escapeHtml(user.name || "-")}</div>
+                      <div class="user-uid">Email: ${escapeHtml(user.email || "-")}</div>
                     </div>
                 </div>
             `;

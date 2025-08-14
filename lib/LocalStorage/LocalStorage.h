@@ -47,3 +47,9 @@ void saveCalibrationToEEPROM(float faktor);
  *          Return default value jika belum pernah dikalibrasi
  */
 float loadCalibrationFromEEPROM();
+
+/**
+ * @brief Menghapus semua UID RFID dari EEPROM
+ * @details Membersihkan seluruh slot UID agar sistem memulai ulang cache RFID
+ */
+void clearAllUIDs();

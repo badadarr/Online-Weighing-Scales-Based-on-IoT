@@ -90,3 +90,17 @@ float loadCalibrationFromEEPROM()
   EEPROM.get(EEPROM_ADDR_KALIBRASI, faktor);
   return faktor;
 }
+
+// Hapus semua UID dari EEPROM
+void clearAllUIDs()
+{
+  // Asumsikan setiap slot UID 32 byte mulai dari EEPROM_ADDR_UID hingga EEPROM_SIZE
+  for (int i = EEPROM_ADDR_UID; i < EEPROM_SIZE; i += 32)
+  {
+    for (int j = 0; j < 32; j++)
+    {
+      EEPROM.write(i + j, 0xFF); // tandai kosong
+    }
+  }
+  EEPROM.commit();
+}

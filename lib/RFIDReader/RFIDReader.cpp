@@ -59,6 +59,11 @@ static int cachedUsersCount = 0;
 static String pendingAddUserUID = "";
 static String pendingAddUserName = "";
 static unsigned long pendingAddUserTime = 0;
+static String lastAutoEnrollUID = "";
+static unsigned long lastAutoEnrollTime = 0;
+// Exclusive-session: rate-limit reject messages
+static unsigned long lastDifferentUIDRejectAt = 0;
+static String lastDifferentUID = "";
 
 void setupRFID()
 {
@@ -101,9 +106,11 @@ void setupRFID()
   rfidUsersDataCached = false;
   cachedUsersCount = 0;
 
-  // Add default test card for offline mode
+  // Add default test card for offline mode (only when auto-enroll is disabled)
+#if !AUTO_ENROLL_RFID
   storeUID("039CA70D"); // Store common test card
   cachedUsersCount = 1;
+#endif
 }
 
 bool isRFIDValid(String &uid)
@@ -165,9 +172,14 @@ bool isUIDAuthorized(String uid)
   {
     Serial.print("[RFID] UID not found in cached authorized users: ");
     Serial.println(uid);
-    // Store this UID anyway for future use
+#if AUTO_ENROLL_RFID
+    // Not authorized; let auto-enroll path handle it
+    return false;
+#else
+    // Store this UID anyway for future use (permissive mode)
     storeUID(uid);
-    return true; // Allow access even if not found (permissive mode)
+    return true;
+#endif
   }
 
   // If data collection failed (permissive mode) or no cached users, try direct Firebase check
@@ -179,12 +191,17 @@ bool isUIDAuthorized(String uid)
     for (int i = 0; i < 3; i++)
     {
       String path;
-      if (i == 0)
-        path = String("/rfid_users/") + uid;
-      else if (i == 1)
-        path = String("/authorized_users/") + uid;
-      else
-        path = String("/users/") + uid + "/authorized";
+      if (i == 0) {
+        path = "/rfid_users/";
+        path += uid;
+      } else if (i == 1) {
+        path = "/authorized_users/";
+        path += uid;
+      } else {
+        path = "/users/";
+        path += uid;
+        path += "/authorized";
+      }
 
       Serial.print("[RFID] Checking path: ");
       Serial.println(path);
@@ -214,13 +231,15 @@ bool isUIDAuthorized(String uid)
     Serial.println(fbdo.errorReason());
 
     // If we're in permissive mode (no cached data available), allow access for testing
+#if !AUTO_ENROLL_RFID
     if (cachedUsersCount == 0 && rfidUsersDataCached)
     {
-  Serial.print("[RFID] PERMISSIVE MODE: Allowing access for testing - ");
-  Serial.println(uid);
+      Serial.print("[RFID] PERMISSIVE MODE: Allowing access for testing - ");
+      Serial.println(uid);
       storeUID(uid); // Store for future use
       return true;
     }
+#endif
   }
 
   return false;
@@ -279,9 +298,12 @@ bool addRFIDUser(String uid, String name, String email)
 
   // Try multiple paths to ensure compatibility
   String paths[3];
-  paths[0] = String("/rfid_users/") + uid;
-  paths[1] = String("/authorized_users/") + uid;
-  paths[2] = String("/users/") + uid;
+  paths[0] = "/rfid_users/";
+  paths[0] += uid;
+  paths[1] = "/authorized_users/";
+  paths[1] += uid;
+  paths[2] = "/users/";
+  paths[2] += uid;
 
   bool success = false;
 
@@ -330,6 +352,55 @@ bool addRFIDUser(String uid, String name, String email)
   }
 
   return success;
+}
+
+// Auto-enroll: create rfid_users/{uid} and allow access immediately
+static bool autoEnrollIfEnabled(const String &uid)
+{
+#if AUTO_ENROLL_RFID
+  unsigned long now = millis();
+  if (uid.length() == 0)
+    return false;
+  if (lastAutoEnrollUID == uid && (now - lastAutoEnrollTime) < AUTO_ENROLL_COOLDOWN_MS)
+  {
+    return true; // recently enrolled
+  }
+  if (!Firebase.ready())
+  {
+    Serial.println("[RFID] Auto-enroll aborted: Firebase not ready");
+    return false;
+  }
+
+  FirebaseJson userJson;
+  userJson.set("uid", uid);
+  userJson.set("name", String(AUTO_ENROLL_DEFAULT_NAME));
+  userJson.set("email", "");
+  userJson.set("active", (bool)AUTO_ENROLL_ACTIVE_DEFAULT);
+  userJson.set("created_at", String(millis()));
+  userJson.set("device_id", DEVICE_ID);
+
+  String path = "/rfid_users/";
+  path += uid;
+  Serial.print("[RFID] Auto-enrolling UID at ");
+  Serial.println(path);
+
+  bool ok = Firebase.RTDB.setJSON(&fbdo, path, &userJson);
+  if (ok)
+  {
+    storeUID(uid); // add to local cache
+    cachedUsersCount = max(1, cachedUsersCount);
+    lastAutoEnrollUID = uid;
+    lastAutoEnrollTime = now;
+    Serial.println("[RFID] Auto-enroll success");
+    return true;
+  }
+  Serial.print("[RFID] Auto-enroll failed: ");
+  Serial.println(fbdo.errorReason());
+  return false;
+#else
+  (void)uid;
+  return false;
+#endif
 }
 
 // Grant access to weighing system
@@ -439,7 +510,8 @@ void extendAccess()
     static unsigned long lastExtendLog = 0;
     if (millis() - lastExtendLog > 30000)
     {
-      Serial.println("[ACCESS] Access time extended for: " + authorizedUser);
+  Serial.print("[ACCESS] Access time extended for: ");
+  Serial.println(authorizedUser);
       lastExtendLog = millis();
     }
   }
@@ -466,15 +538,18 @@ void processPendingAddUserRequests()
       Firebase.ready())
   {
 
-    Serial.println("[RFID] Processing pending add user request: " + pendingAddUserUID);
+  Serial.print("[RFID] Processing pending add user request: ");
+  Serial.println(pendingAddUserUID);
 
     if (addRFIDUser(pendingAddUserUID, pendingAddUserName, ""))
     {
-      Serial.println("[RFID] Pending user added successfully: " + pendingAddUserUID);
+  Serial.print("[RFID] Pending user added successfully: ");
+  Serial.println(pendingAddUserUID);
     }
     else
     {
-      Serial.println("[RFID] Failed to add pending user: " + pendingAddUserUID);
+  Serial.print("[RFID] Failed to add pending user: ");
+  Serial.println(pendingAddUserUID);
     }
 
     // Clear pending request
@@ -503,6 +578,28 @@ bool processRFIDTag(String uid)
 
   // Process any pending add user requests first
   processPendingAddUserRequests();
+
+#if RFID_EXCLUSIVE_SESSION
+  // If someone is already authorized and it's a different UID, block takeover
+  if (accessGranted && authorizedUser.length() > 0 && authorizedUser != uid)
+  {
+    // Only warn at cooldown intervals or when UID changes
+    if ((millis() - lastDifferentUIDRejectAt) > RFID_REJECT_DIFFERENT_UID_COOLDOWN_MS || lastDifferentUID != uid)
+    {
+      Serial.print("[ACCESS] Rejected UID ");
+      Serial.print(uid);
+      Serial.print(" while in session by ");
+      Serial.println(authorizedUser);
+      lcdShowStatus("Sedang dipakai");
+      setColor(255, 165, 0); // Orange
+      buzz(150);
+      lastDifferentUIDRejectAt = millis();
+      lastDifferentUID = uid;
+    }
+    // Do not end current session; simply ignore this tag
+    return false;
+  }
+#endif
 
   // If already have access with same UID, handle logout
   if (accessGranted && authorizedUser == uid)
@@ -550,17 +647,31 @@ bool processRFIDTag(String uid)
     }
   }
 
-  // If different user or no access, check if this is a new user that needs to be added
+  // If different user or no access, check if this is a new user
   if (!isUIDAuthorized(uid))
   {
-    // Ini adalah UID baru/tidak dikenal. Fungsi isUIDAuthorized sudah menentukan
-    // bahwa akses ditolak. Sekarang, kita hanya perlu meminta registrasi.
-  Serial.print("[RFID] Unauthorized UID detected: ");
-  Serial.println(uid);
-    // Panggilan grantWeighingAccess di bawah ini akan gagal dan memicu permintaan registrasi.
+    Serial.print("[RFID] Unauthorized UID detected: ");
+    Serial.println(uid);
+
+#if AUTO_ENROLL_RFID
+    // Try to auto-enroll, then grant
+    if (autoEnrollIfEnabled(uid))
+    {
+      // Now authorized; grant access
+      return grantWeighingAccess(uid);
+    }
+#endif
+
+    // Fallback: push an authorization request and deny
+    requestRFIDRegistration(uid);
+    lcdShowError("RFID Tidak Dikenal");
+    setColor(255, 0, 0);
+    buzz(300);
+    delay(500);
+    return false;
   }
 
-  // If different user or no access, grant new access
+  // Known user: grant access
   return grantWeighingAccess(uid);
 }
 
@@ -636,7 +747,8 @@ bool collectRFIDUsersData()
   for (int pathIndex = 0; pathIndex < 3; pathIndex++)
   {
     String path = paths[pathIndex];
-    Serial.println("[RFID] Trying path: " + path);
+  Serial.print("[RFID] Trying path: ");
+  Serial.println(path);
 
     if (Firebase.RTDB.getJSON(&fbdo, path))
     {
@@ -648,7 +760,8 @@ bool collectRFIDUsersData()
         int type = 0;
         int count = 0;
 
-        Serial.println("[RFID] Processing data from: " + path);
+  Serial.print("[RFID] Processing data from: ");
+  Serial.println(path);
 
         for (size_t i = 0; i < len; i++)
         {
@@ -701,25 +814,33 @@ bool collectRFIDUsersData()
           rfidUsersDataCached = true;
           lastDataSync = millis();
 
-          Serial.println(String("[RFID] Data collection complete from ") + path + String(". Users cached: ") + String(count));
+          Serial.print("[RFID] Data collection complete from ");
+          Serial.print(path);
+          Serial.print(". Users cached: ");
+          Serial.println(String(count));
 
           return true;
         }
       }
       else
       {
-        Serial.println("[RFID] Invalid data type from: " + path);
+  Serial.print("[RFID] Invalid data type from: ");
+  Serial.println(path);
       }
     }
     else
     {
-      Serial.print("[RFID] Failed to access " + path + ": ");
+  Serial.print("[RFID] Failed to access ");
+  Serial.print(path);
+  Serial.print(": ");
       Serial.println(fbdo.errorReason());
 
       // If permission denied, continue to next path
       if (fbdo.errorReason().indexOf("Permission denied") >= 0)
       {
-        Serial.println("[RFID] Permission denied for " + path + ", trying next path...");
+  Serial.print("[RFID] Permission denied for ");
+  Serial.print(path);
+  Serial.println(", trying next path...");
         continue;
       }
     }
@@ -735,15 +856,17 @@ bool syncRFIDUsersFromFirebase()
   Serial.println("[RFID] Alternative sync: Trying accessible paths...");
 
   // Try request-based paths that might be more accessible
-  String requestPaths[] = {
-      "/rfid_requests",
-      "/authorization_requests",
-      "/device_users/" + String(DEVICE_ID)};
+  String requestPaths[3];
+  requestPaths[0] = "/rfid_requests";
+  requestPaths[1] = "/authorization_requests";
+  requestPaths[2] = "/device_users/";
+  requestPaths[2] += String(DEVICE_ID);
 
   for (int i = 0; i < 3; i++)
   {
     String path = requestPaths[i];
-    Serial.println("[RFID] Trying request path: " + path);
+  Serial.print("[RFID] Trying request path: ");
+  Serial.println(path);
 
     if (Firebase.RTDB.getJSON(&fbdo, path))
     {
@@ -755,7 +878,8 @@ bool syncRFIDUsersFromFirebase()
         int type = 0;
         int count = 0;
 
-        Serial.println("[RFID] Processing data from: " + path);
+  Serial.print("[RFID] Processing data from: ");
+  Serial.println(path);
 
         for (size_t j = 0; j < len; j++)
         {
@@ -826,7 +950,10 @@ bool syncRFIDUsersFromFirebase()
           rfidUsersDataCached = true;
           lastDataSync = millis();
 
-          Serial.println("[RFID] Alternative sync complete from " + path + ". Users cached: " + String(count));
+          Serial.print("[RFID] Alternative sync complete from ");
+          Serial.print(path);
+          Serial.print(". Users cached: ");
+          Serial.println(String(count));
           return true;
         }
         else if (path == "/rfid_requests")
@@ -842,27 +969,34 @@ bool syncRFIDUsersFromFirebase()
     }
     else
     {
-      Serial.print("[RFID] Failed to access " + path + ": ");
+  Serial.print("[RFID] Failed to access ");
+  Serial.print(path);
+  Serial.print(": ");
       Serial.println(fbdo.errorReason());
     }
   }
 
-  // If all methods failed, create a minimal cache with demo UID for testing
+  // If all methods failed:
+#if AUTO_ENROLL_RFID
+  // Do NOT enable permissive mode. Mark cache as empty and rely on auto-enroll at first scan.
+  Serial.println("[RFID] All sync methods failed; AUTO_ENROLL active. Will enroll on first scan.");
+  rfidUsersDataCached = true;
+  cachedUsersCount = 0;
+  lastDataSync = millis();
+  return true;
+#else
+  // Create a minimal cache with demo UID for testing (permissive mode)
   Serial.println("[RFID] All sync methods failed, enabling permissive mode for testing...");
   Serial.println("[RFID] Note: This allows any RFID to access - not for production!");
-
-  // Add default test card if not already stored
   if (!isUIDStored("039CA70D"))
   {
-    storeUID("039CA70D"); // Store common test card
+    storeUID("039CA70D");
     cachedUsersCount = 1;
   }
-
-  // Mark as cached (permissive mode)
   rfidUsersDataCached = true;
   lastDataSync = millis();
-
-  return true; // Return true to enable permissive mode
+  return true;
+#endif
 }
 
 bool isRFIDUsersDataCached()
@@ -874,6 +1008,7 @@ void clearRFIDUsersCache()
 {
   // This would clear local storage cache
   // Implementation depends on LocalStorage.h functions
+  clearAllUIDs(); // wipe EEPROM-stored UIDs as well
   cachedUsersCount = 0;
   rfidUsersDataCached = false;
   lastDataSync = 0; // Force next sync
