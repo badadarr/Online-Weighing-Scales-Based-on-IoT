@@ -1,35 +1,30 @@
 {
   "rules": {
     "authorized_users": {
-      ".read": "auth != null || query.orderByChild == 'device_access'",
-      ".write": "auth != null && (auth.token.admin == true || auth.uid != null)",
+      ".read": "auth != null",
+      ".write": "auth != null",
       "$uid": {
-        ".read": "auth != null || query.orderByChild == 'device_access'",
-        ".write": "auth != null"
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".validate": "newData.isBoolean()"
       }
     },
     "rfid_users": {
-      ".read": "auth != null || query.orderByChild == 'device_access'",
-      ".write": "auth != null && (auth.token.admin == true || auth.uid != null)",
+      ".read": "auth != null",
+      ".write": "auth != null",
       "$uid": {
-        ".read": "auth != null || query.orderByChild == 'device_access'",
-        ".write": "auth != null"
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['uid']) && newData.child('uid').isString() && newData.child('uid').val() == $uid && (newData.child('active').exists() ? newData.child('active').isBoolean() : true)"
       }
     },
     "rfid_requests": {
       ".read": "auth != null",
-      ".write": "auth != null",
+      ".write": true,
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "authorization_requests": {
-      ".read": "auth != null",
-      ".write": "auth != null",
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".write": true,
+        ".validate": "newData.hasChildren(['device_id','request_time']) && (newData.child('approved').exists() ? newData.child('approved').isBoolean() : true) && (newData.child('status').exists() ? newData.child('status').isString() : true)"
       }
     },
     "device_users": {

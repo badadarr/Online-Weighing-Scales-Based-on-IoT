@@ -171,6 +171,30 @@ void TimbangangWebServerIntegrated::init()
                 }
             } });
 
+    // Pending RFID requests
+    server->on("/api/rfid/requests", HTTP_GET, [this]()
+               {
+        String pending = getPendingRFIDRequests();
+        if (pending.length() == 0) pending = "[]";
+        server->send(200, "application/json", String("{\"success\":true,\"requests\":") + pending + "}"); });
+
+    server->on("/api/rfid/requests/approve", HTTP_POST, [this]()
+               {
+        if (!server->hasArg("plain")) { server->send(400, "application/json", "{\"success\":false,\"message\":\"No data\"}"); return; }
+        DynamicJsonDocument doc(512); if (deserializeJson(doc, server->arg("plain"))) { server->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}"); return; }
+        String uid = doc["uid"].as<String>(); String name = doc["name"].as<String>(); String email = doc["email"].as<String>();
+        if (uid.length()==0) { server->send(400, "application/json", "{\"success\":false,\"message\":\"UID required\"}"); return; }
+        bool ok = approveRFIDRequest(uid, name, email);
+        server->send(ok?200:500, "application/json", ok?"{\"success\":true}":"{\"success\":false,\"message\":\"Failed to approve\"}"); });
+
+    server->on("/api/rfid/requests/reject", HTTP_POST, [this]()
+               {
+        if (!server->hasArg("plain")) { server->send(400, "application/json", "{\"success\":false,\"message\":\"No data\"}"); return; }
+        DynamicJsonDocument doc(256); if (deserializeJson(doc, server->arg("plain"))) { server->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}"); return; }
+        String uid = doc["uid"].as<String>(); if (uid.length()==0) { server->send(400, "application/json", "{\"success\":false,\"message\":\"UID required\"}"); return; }
+        bool ok = rejectRFIDRequest(uid);
+        server->send(ok?200:500, "application/json", ok?"{\"success\":true}":"{\"success\":false,\"message\":\"Failed to reject\"}"); });
+
     server->on("/api/add-rfid-user", HTTP_POST, [this]()
                {
     if (!server->hasArg("plain")) {
@@ -762,6 +786,66 @@ String TimbangangWebServerIntegrated::getAuthorizedUsersFromFirebase()
 
     String out; serializeJson(users, out);
     return out;
+}
+
+String TimbangangWebServerIntegrated::getPendingRFIDRequests()
+{
+    extern FirebaseData fbdo;
+    DynamicJsonDocument doc(4096);
+    JsonArray arr = doc.to<JsonArray>();
+    if (Firebase.ready()) {
+        if (Firebase.RTDB.getJSON(&fbdo, "/rfid_requests")) {
+            FirebaseJson &json = fbdo.jsonObject();
+            size_t len = json.iteratorBegin();
+            String key, value; int type = 0; FirebaseJsonData jd;
+            for (size_t i=0;i<len;i++){
+                json.iteratorGet(i, type, key, value);
+                if (type==FirebaseJson::JSON_OBJECT){
+                    FirebaseJson req; req.setJsonData(value);
+                    String status=""; bool approved=false; String device=""; String created=""; String name=""; String email="";
+                    if (req.get(jd, "status")) status = jd.stringValue;
+                    if (req.get(jd, "approved")) approved = jd.boolValue;
+                    if (req.get(jd, "device_id")) device = jd.stringValue;
+                    if (req.get(jd, "request_time")) created = jd.stringValue;
+                    if (req.get(jd, "name")) name = jd.stringValue;
+                    if (req.get(jd, "email")) email = jd.stringValue;
+                    if (!approved && (status=="pending" || status=="")){
+                        JsonObject o = arr.createNestedObject();
+                        o["uid"]=key; o["device_id"]=device; o["request_time"]=created; o["name"]=name; o["email"]=email;
+                    }
+                }
+            }
+            json.iteratorEnd();
+        }
+    }
+    String out; serializeJson(arr, out); return out;
+}
+
+bool TimbangangWebServerIntegrated::approveRFIDRequest(String uid, String name, String email)
+{
+    extern FirebaseData fbdo;
+    if (!Firebase.ready()) return false;
+    // 1) Create user in /rfid_users
+    FirebaseJson user; user.set("uid", uid); user.set("name", name.length()?name:uid); user.set("email", email); user.set("active", true); user.set("created_at", String(millis())); user.set("device_id", DEVICE_ID);
+    String userPath = String("/rfid_users/")+uid;
+    if (!Firebase.RTDB.setJSON(&fbdo, userPath, &user)) return false;
+    // 2) Mark request approved
+    String reqPath = String("/rfid_requests/")+uid+"/status"; Firebase.RTDB.setString(&fbdo, reqPath, "approved");
+    Firebase.RTDB.setBool(&fbdo, String("/rfid_requests/")+uid+"/approved", true);
+    // 3) Add to local cache for immediate access
+    extern void storeUID(String uid); storeUID(uid);
+    extern bool forceRefreshRFIDCache(); delay(300); forceRefreshRFIDCache();
+    return true;
+}
+
+bool TimbangangWebServerIntegrated::rejectRFIDRequest(String uid)
+{
+    extern FirebaseData fbdo;
+    if (!Firebase.ready()) return false;
+    String base = String("/rfid_requests/")+uid;
+    bool ok1 = Firebase.RTDB.setString(&fbdo, base+"/status", "rejected");
+    bool ok2 = Firebase.RTDB.deleteNode(&fbdo, base+"/approved");
+    return ok1 || ok2;
 }
 
 String TimbangangWebServerIntegrated::getUserNameFromUID(String uid)

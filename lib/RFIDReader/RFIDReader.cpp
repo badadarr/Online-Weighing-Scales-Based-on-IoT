@@ -65,6 +65,75 @@ static unsigned long lastAutoEnrollTime = 0;
 static unsigned long lastDifferentUIDRejectAt = 0;
 static String lastDifferentUID = "";
 
+// Helper: perform online authorization check across known paths and honor 'active' flag
+static bool isUIDAuthorizedOnline(String uid)
+{
+  uid.trim();
+  if (uid.length() == 0)
+    return false;
+
+  // Try multiple authorization locations
+  for (int i = 0; i < 3; i++)
+  {
+    String path;
+    if (i == 0)
+    {
+      path = String("/rfid_users/");
+      path += uid;
+    }
+    else if (i == 1)
+    {
+      path = String("/authorized_users/");
+      path += uid;
+    }
+    else
+    {
+      path = String("/users/");
+      path += uid;
+      path += String("/authorized");
+    }
+
+    Serial.print("[RFID] Online check path: ");
+    Serial.println(path);
+
+    bool ok = Firebase.RTDB.getJSON(&fbdo, path);
+
+    if (ok && fbdo.dataType() == "json")
+    {
+      // JSON object found (typical for /rfid_users/{uid})
+      FirebaseJson json = fbdo.to<FirebaseJson>();
+      FirebaseJsonData val;
+      bool active = true; // default allow when flag absent
+      if (json.get(val, "active") && val.type == "bool")
+      {
+        active = val.boolValue;
+      }
+
+      if (active)
+      {
+        Serial.println("[RFID] Online authorized (json)");
+        return true;
+      }
+      else
+      {
+        Serial.println("[RFID] Online found but inactive");
+        return false;
+      }
+    }
+    else if (ok && fbdo.dataType() == "boolean" && fbdo.to<bool>())
+    {
+      Serial.println("[RFID] Online authorized (boolean)");
+      return true;
+    }
+  }
+
+  Serial.print("[RFID] Online authorization miss for ");
+  Serial.println(uid);
+  Serial.print("[Firebase Error] ");
+  Serial.println(fbdo.errorReason());
+  return false;
+}
+
 void setupRFID()
 {
   Serial.begin(115200);
@@ -159,90 +228,32 @@ bool isUIDAuthorized(String uid)
     return true;
   }
 
-  // If Firebase is not ready, store this UID and allow access (permissive mode)
-  if (!Firebase.ready())
+  // Try online check when Firebase is ready before deciding to deny
+  if (Firebase.ready())
   {
-    Serial.println("[RFID] Firebase not ready, allowing access in permissive mode");
-    storeUID(uid); // Store for future use
-    return true;
+    if (isUIDAuthorizedOnline(uid))
+    {
+      storeUID(uid);
+      return true;
+    }
   }
-
-  // If data is cached but UID not found, and we have users cached, deny access
-  if (rfidUsersDataCached && cachedUsersCount > 0)
+  else
   {
-    Serial.print("[RFID] UID not found in cached authorized users: ");
-    Serial.println(uid);
-#if AUTO_ENROLL_RFID
-    // Not authorized; let auto-enroll path handle it
-    return false;
-#else
-    // Store this UID anyway for future use (permissive mode)
+    // Firebase not ready: optional permissive mode for field ops
+#if !AUTO_ENROLL_RFID
+    Serial.println("[RFID] Firebase not ready, allowing (permissive) and caching");
     storeUID(uid);
     return true;
 #endif
   }
 
-  // If data collection failed (permissive mode) or no cached users, try direct Firebase check
-  if (!rfidUsersDataCached || cachedUsersCount == 0)
-  {
-    Serial.println("[RFID] Attempting direct Firebase authorization check...");
-
-    // Try multiple paths for authorization
-    for (int i = 0; i < 3; i++)
-    {
-      String path;
-      if (i == 0) {
-        path = "/rfid_users/";
-        path += uid;
-      } else if (i == 1) {
-        path = "/authorized_users/";
-        path += uid;
-      } else {
-        path = "/users/";
-        path += uid;
-        path += "/authorized";
-      }
-
-      Serial.print("[RFID] Checking path: ");
-      Serial.println(path);
-
-      bool found = Firebase.RTDB.getJSON(&fbdo, path);
-
-      if (found && fbdo.dataType() == "json")
-      {
-  Serial.print("[RFID] UID authorized online: ");
-  Serial.println(uid);
-        // Store locally for future offline use
-        storeUID(uid);
-        return true;
-      }
-      else if (found && fbdo.dataType() == "boolean" && fbdo.to<bool>())
-      {
-  Serial.print("[RFID] UID authorized (boolean): ");
-  Serial.println(uid);
-        storeUID(uid);
-        return true;
-      }
-    }
-
-  Serial.print("[RFID] UID not found in any Firebase path: ");
-  Serial.println(uid);
-    Serial.print("[Firebase Error] Last error: ");
-    Serial.println(fbdo.errorReason());
-
-    // If we're in permissive mode (no cached data available), allow access for testing
-#if !AUTO_ENROLL_RFID
-    if (cachedUsersCount == 0 && rfidUsersDataCached)
-    {
-      Serial.print("[RFID] PERMISSIVE MODE: Allowing access for testing - ");
-      Serial.println(uid);
-      storeUID(uid); // Store for future use
-      return true;
-    }
-#endif
-  }
-
+  // Final decision: deny unless permissive empty-cache mode is allowed
+#if AUTO_ENROLL_RFID
   return false;
+#else
+  // Strict mode: do NOT allow access when cache is empty; must be in rfid_users or approved.
+  return false;
+#endif
 }
 
 // Cek apakah UID sudah terdaftar di EEPROM lokal debuging (legacy function)
@@ -253,7 +264,8 @@ bool isUIDRegistered(String uid)
 
 void requestRFIDRegistration(String uid)
 {
-  String path = "/authorization_requests/";
+  // Primary: use /rfid_requests as the pending queue for unknown UIDs
+  String path = "/rfid_requests/";
   path += uid;
   FirebaseJson json;
   json.set("device_id", DEVICE_ID);
@@ -276,6 +288,11 @@ void requestRFIDRegistration(String uid)
     Serial.println("[RFID] Failed to send authorization request");
     lcdShowError("Gagal Kirim Request");
   }
+
+  // Back-compat (optional): also mirror to /authorization_requests if permitted
+  String legacy = "/authorization_requests/";
+  legacy += uid;
+  Firebase.RTDB.setJSON(&fbdo, legacy, &json);
 }
 
 // Function to add RFID user directly (called from web interface or serial)
@@ -793,6 +810,25 @@ bool collectRFIDUsersData()
 
             if (isValidUID && uid.length() > 0)
             {
+              // Honor active flag on /rfid_users path when object has metadata
+              if (path == "/rfid_users")
+              {
+                FirebaseJson nested;
+                nested.setJsonData(value);
+                FirebaseJsonData flag;
+                bool active = true;
+                if (nested.get(flag, "active") && flag.type == "bool")
+                {
+                  active = flag.boolValue;
+                }
+                if (!active)
+                {
+                  Serial.print("[RFID] Skipped inactive UID: ");
+                  Serial.println(uid);
+                  continue;
+                }
+              }
+
               storeUID(uid);
               count++;
               Serial.print("[RFID] Cached user: ");
@@ -885,7 +921,7 @@ bool syncRFIDUsersFromFirebase()
         {
           json.iteratorGet(j, type, key, value);
 
-          // For rfid_requests, cache all UIDs (they're pre-approved)
+          // For rfid_requests, cache only when approved
           if (path == "/rfid_requests" && type == FirebaseJson::JSON_OBJECT)
           {
             String uid = key;
@@ -914,10 +950,29 @@ bool syncRFIDUsersFromFirebase()
 
             if (isValidUID && uid.length() > 0)
             {
-              storeUID(uid);
-              count++;
-              Serial.print("[RFID] Cached request user: ");
-              Serial.println(uid);
+              // Parse nested object to see approval state
+              FirebaseJson nested;
+              nested.setJsonData(value);
+              FirebaseJsonData f;
+              bool approved = false;
+              String statusStr;
+              if (nested.get(f, "approved") && f.type == "bool")
+                approved = f.boolValue;
+              if (nested.get(f, "status") && f.type == "string")
+                statusStr = f.stringValue;
+
+              if (approved || statusStr.equalsIgnoreCase("approved"))
+              {
+                storeUID(uid);
+                count++;
+                Serial.print("[RFID] Cached approved request user: ");
+                Serial.println(uid);
+              }
+              else
+              {
+                Serial.print("[RFID] Pending request (not cached): ");
+                Serial.println(uid);
+              }
             }
             else
             {

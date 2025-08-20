@@ -159,19 +159,66 @@
       .user-list {
         margin-top: 20px;
       }
-      .user-item {
-        background-color: #f8f9fa;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 10px;
-        margin-bottom: 10px;
+      .user-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 12px;
       }
-      .user-name {
-        font-weight: bold;
+      .user-card {
+        background-color: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 12px 14px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
       }
-      .user-uid {
+      .user-card .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .user-card .title {
+        font-weight: 700;
+        color: #1f2937;
+      }
+      .user-card .chip {
+        background: #eef2ff;
+        color: #3730a3;
         font-size: 12px;
-        color: #6c757d;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+      .badge {
+        font-size: 12px;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+      .badge.active {
+        background: #d1fae5;
+        color: #065f46;
+      }
+      .badge.inactive {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+      .meta {
+        font-size: 12px;
+        color: #6b7280;
+        margin-bottom: 8px;
+      }
+      .field {
+        font-size: 13px;
+        margin: 2px 0;
+      }
+      .field label {
+        color: #6b7280;
+        margin-right: 6px;
+      }
+      .field code {
+        color: #111827;
+        background: #f3f4f6;
+        padding: 1px 6px;
+        border-radius: 4px;
       }
       .network-item {
         background-color: #f8f9fa;
@@ -406,27 +453,59 @@
         <div class="section">
           <h2>Manajemen Pengguna RFID</h2>
           <div id="rfidInfo" class="config-info mb-12">
-            <div>Status Auto-Enroll: <span id="autoEnrollStatus">Memuat...</span></div>
+            <div>
+              Status Auto-Enroll: <span id="autoEnrollStatus">Memuat...</span>
+            </div>
             <div>Terakhir di-scan: <span id="lastScan">-</span></div>
             <div>Total Cached Users: <span id="cachedUsersInfo">0</span></div>
+          </div>
+
+          <div class="section section-soft">
+            <h3>Pending Requests</h3>
+            <div id="pendingRequests">Memuat permintaan...</div>
+            <button type="button" class="btn" onclick="loadPendingRequests()">Refresh Pending</button>
           </div>
 
           <div class="section section-soft">
             <h3>Quick Label untuk Kartu Baru</h3>
             <div class="form-group">
               <label for="quickUID">UID Terakhir:</label>
-              <input type="text" id="quickUID" placeholder="Tap kartu untuk mengisi otomatis" />
+              <input
+                type="text"
+                id="quickUID"
+                placeholder="Tap kartu untuk mengisi otomatis"
+              />
             </div>
             <div class="form-group">
               <label for="quickName">Nama:</label>
-              <input type="text" id="quickName" placeholder="Masukkan nama pengguna" />
+              <input
+                type="text"
+                id="quickName"
+                placeholder="Masukkan nama pengguna"
+              />
             </div>
             <div class="form-group">
               <label for="quickEmail">Email (opsional):</label>
-              <input type="email" id="quickEmail" placeholder="Masukkan email" />
+              <input
+                type="email"
+                id="quickEmail"
+                placeholder="Masukkan email"
+              />
             </div>
-            <button type="button" class="btn btn-success" onclick="labelLastUID()">Simpan Label</button>
-            <button type="button" class="btn btn-warning" onclick="clearRFIDCache()">Clear Cache UID Lokal</button>
+            <button
+              type="button"
+              class="btn btn-success"
+              onclick="labelLastUID()"
+            >
+              Simpan Label
+            </button>
+            <button
+              type="button"
+              class="btn btn-warning"
+              onclick="clearRFIDCache()"
+            >
+              Clear Cache UID Lokal
+            </button>
           </div>
 
           <div id="response" class="response hidden"></div>
@@ -437,7 +516,9 @@
             <button type="button" class="btn" onclick="syncRFIDData()">
               Sinkronisasi Data RFID
             </button>
-            <button type="button" class="btn" onclick="refreshRFIDStatus()">Refresh Status</button>
+            <button type="button" class="btn" onclick="refreshRFIDStatus()">
+              Refresh Status
+            </button>
           </div>
         </div>
       </div>
@@ -450,12 +531,12 @@
         setInterval(updateWeight, 1000);
         setInterval(updateStatus, 2000);
 
-  // Load configuration data
+        // Load configuration data
         loadSystemConfig();
         loadWiFiConfig();
-        loadUsers();
-  refreshRFIDStatus();
-
+  loadUsers();
+  loadPendingRequests();
+        refreshRFIDStatus();
       });
 
       function openTab(tabName) {
@@ -778,7 +859,7 @@
           });
       }
 
-  // Manual add user removed; use Quick Label instead
+      // Manual add user removed; use Quick Label instead
 
       function loadUsers() {
         const userListDiv = document.getElementById("userList");
@@ -803,23 +884,82 @@
           });
       }
 
+      function loadPendingRequests() {
+        const el = document.getElementById("pendingRequests");
+        if (!el) return;
+        el.textContent = "Memuat permintaan...";
+        fetch("/api/rfid/requests")
+          .then((r) => r.json())
+          .then((d) => {
+            if (!d.success) throw new Error(d.message || "Gagal memuat");
+            const reqs = Array.isArray(d.requests) ? d.requests : [];
+            if (reqs.length === 0) {
+              el.innerHTML = '<div class="user-item">Tidak ada permintaan pending</div>';
+              return;
+            }
+            let html = '<div class="user-grid">';
+            reqs.forEach((r, i) => {
+              html += `
+              <div class="user-card">
+                <div class="header">
+                  <div class="title">Request ${i + 1}: ${escapeHtml(
+                    (r.uid||'').toString()
+                  )}</div>
+                  <span class="chip">PENDING</span>
+                </div>
+                <div class="field"><label>Device ID:</label><span>${escapeHtml((r.device_id||'-').toString())}</span></div>
+                <div class="field"><label>Requested At:</label><span>${escapeHtml((r.request_time||'-').toString())}</span></div>
+                <div class="field"><label>Nama:</label><span>${escapeHtml(r.name||'-')}</span></div>
+                <div class="field"><label>Email:</label><span>${escapeHtml(r.email||'-')}</span></div>
+                <div class="field"><button class="btn btn-success" onclick="approveRequest('${'${'}r.uid||''${'}'}')">Approve</button>
+                <button class="btn btn-danger" onclick="rejectRequest('${'${'}r.uid||''${'}'}')">Reject</button></div>
+              </div>`;
+            });
+            html += '</div>';
+            el.innerHTML = html;
+          })
+          .catch((e) => {
+            console.error(e);
+            el.innerHTML = '<div class="user-item">Kesalahan memuat pending requests</div>';
+          });
+      }
+
+      function approveRequest(uid) {
+        uid = (uid||'').toString(); if(!uid) return;
+        const name = prompt('Nama (opsional, default = UID):', '');
+        const email = prompt('Email (opsional):', '');
+        fetch('/api/rfid/requests/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({uid, name, email}) })
+          .then(r=>r.json())
+          .then(d=>{ if(d.success){ loadPendingRequests(); loadUsers(); showResponse('UID '+uid+' disetujui', 'success'); } else { showResponse(d.message||'Gagal approve', 'error'); } })
+          .catch(e=>{ console.error(e); showResponse('Kesalahan jaringan', 'error'); });
+      }
+
+      function rejectRequest(uid) {
+        uid = (uid||'').toString(); if(!uid) return;
+        if(!confirm('Tolak UID '+uid+'?')) return;
+        fetch('/api/rfid/requests/reject', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({uid}) })
+          .then(r=>r.json())
+          .then(d=>{ if(d.success){ loadPendingRequests(); showResponse('Permintaan ditolak', 'success'); } else { showResponse(d.message||'Gagal reject', 'error'); } })
+          .catch(e=>{ console.error(e); showResponse('Kesalahan jaringan', 'error'); });
+      }
+
       function refreshRFIDStatus() {
         fetch("/api/rfid/status")
           .then((r) => r.json())
           .then((d) => {
-            document.getElementById("autoEnrollStatus").textContent = d.autoEnrollEnabled
-              ? "AKTIF"
-              : "NONAKTIF";
-            document.getElementById("autoEnrollStatus").style.color = d.autoEnrollEnabled
-              ? "#28a745"
-              : "#dc3545";
-            document.getElementById("cachedUsersInfo").textContent = d.cachedUsers || 0;
+            document.getElementById("autoEnrollStatus").textContent =
+              d.autoEnrollEnabled ? "AKTIF" : "NONAKTIF";
+            document.getElementById("autoEnrollStatus").style.color =
+              d.autoEnrollEnabled ? "#28a745" : "#dc3545";
+            document.getElementById("cachedUsersInfo").textContent =
+              d.cachedUsers || 0;
             const last = d.lastUID || "-";
             document.getElementById("lastScan").textContent = last || "-";
             if (last && last !== "-") {
               document.getElementById("quickUID").value = last;
               if (d.lastUserName && d.lastUserName !== last) {
-                document.getElementById("quickName").placeholder = d.lastUserName;
+                document.getElementById("quickName").placeholder =
+                  d.lastUserName;
               }
             }
           })
@@ -829,7 +969,9 @@
       function labelLastUID() {
         const uid = (document.getElementById("quickUID").value || "").trim();
         const name = (document.getElementById("quickName").value || "").trim();
-        const email = (document.getElementById("quickEmail").value || "").trim();
+        const email = (
+          document.getElementById("quickEmail").value || ""
+        ).trim();
         if (!uid || !name) {
           showResponse("UID dan Nama wajib diisi", "error");
           return;
@@ -861,7 +1003,12 @@
       }
 
       function clearRFIDCache() {
-        if (!confirm("Hapus seluruh UID lokal? Kartu harus auto-enroll ulang saat di-tap.")) return;
+        if (
+          !confirm(
+            "Hapus seluruh UID lokal? Kartu harus auto-enroll ulang saat di-tap."
+          )
+        )
+          return;
         fetch("/api/rfid/clear-cache", { method: "POST" })
           .then((r) => r.json())
           .then((d) => {
@@ -911,66 +1058,83 @@
           });
       }
 
-  function displayUsers(users) {
+      function displayUsers(users) {
         const userListDiv = document.getElementById("userList");
         if (!userListDiv) return;
 
-        // Normalize payload to an array of { uid, name, email, active }
         let list = [];
-        if (Array.isArray(users)) {
-          list = users;
-        } else if (users && typeof users === "object") {
-          const keys = Object.keys(users);
-          const fieldish = new Set(["uid", "name", "email", "active", "created_at", "device_id"]);
-          const valuesAreObjects = keys.length > 0 && keys.every((k) => typeof users[k] === "object" && users[k] !== null);
-          const looksLikeSingleUser = keys.some((k) => fieldish.has(k)) && !valuesAreObjects;
+        const uidRegex = /^[0-9A-F]{6,12}$/i;
 
-          if (looksLikeSingleUser) {
-            // Single user object
-            list = [
-              {
-                uid: users.uid || "",
-                name: users.name || "",
-                email: users.email || "",
-                active: users.active,
-              },
-            ];
-          } else if (valuesAreObjects) {
-            // Map keyed by UID -> user object
-            list = keys.map((k) => ({
-              uid: users[k]?.uid || k,
-              name: users[k]?.name || "",
-              email: users[k]?.email || "",
-              active: users[k]?.active,
-            }));
+        // Helper to normalize one user object
+        const normUser = (obj, keyFallback = "") => ({
+          uid: (obj?.uid || obj?.UID || keyFallback || "").toString(),
+          name: obj?.name || obj?.Name || "",
+          email: obj?.email || obj?.Email || "",
+          active: obj?.active !== undefined ? obj.active : obj?.Active,
+        });
+
+        if (Array.isArray(users)) {
+          // Array of user objects
+          for (const u of users) {
+            if (u && typeof u === "object") {
+              const nu = normUser(u);
+              if (nu.uid && uidRegex.test(nu.uid)) list.push(nu);
+            }
+          }
+        } else if (users && typeof users === "object") {
+          // Map keyed by UID
+          for (const [uid, userObject] of Object.entries(users)) {
+            if (uidRegex.test(uid) && userObject && typeof userObject === "object") {
+              list.push(normUser(userObject, uid));
+            }
           }
         }
 
-        // Filter out accidental property items (e.g., 'active', 'created_at', etc.)
-        const ban = new Set(["active", "created_at", "device_id", "email", "name", "uid"]);
-        list = list.filter((u) => {
-          const nm = (u.name || "").toString().trim().toLowerCase();
-          const looksLikeField = (ban.has(nm) || ban.has((u.uid || "").toString().trim().toLowerCase())) && !u.email && !u.name;
-          return !looksLikeField;
-        });
+        list.sort(
+          (a, b) =>
+            (a.name || "").localeCompare(b.name || "") ||
+            (a.uid || "").localeCompare(b.uid || "")
+        );
 
-        if (!list.length) {
+        if (list.length === 0) {
           userListDiv.innerHTML =
             '<div class="user-item">Belum ada pengguna terdaftar</div>';
           return;
         }
 
-        let html = "";
-        list.forEach((user) => {
+        let html = '<div class="user-grid">';
+        list.forEach((user, idx) => {
+          const active = user.active === true;
+          const uid = user.uid || "-";
+
           html += `
-                <div class="user-item">
-                    <div class="user-info">
-                      <div class="user-name">${escapeHtml(user.name || "-")}</div>
-                      <div class="user-uid">Email: ${escapeHtml(user.email || "-")}</div>
-                    </div>
-                </div>
-            `;
+            <div class="user-card">
+              <div class="header">
+                <div class="title">User ${idx + 1}: ${escapeHtml(
+            uid.toString()
+          )}</div>
+                <span class="badge ${active ? "active" : "inactive"}">${
+            active ? "AKTIF" : "NONAKTIF"
+          }</span>
+              </div>
+              <div class="field"><label>Active:</label><span>${
+                active ? "Yes" : "No"
+              }</span></div>
+              <div class="field"><label>Device ID:</label><span>${escapeHtml(
+                (user.device_id || "-").toString()
+              )}</span></div>
+              <div class="field"><label>Email:</label><span>${escapeHtml(
+                user.email || "-"
+              )}</span></div>
+              <div class="field"><label>Name:</label><span>${escapeHtml(
+                user.name || "-"
+              )}</span></div>
+              <div class="field"><label>UID:</label><code>${escapeHtml(
+                uid.toString()
+              )}</code></div>
+            </div>`;
         });
+        html += "</div>";
 
         userListDiv.innerHTML = html;
       }
@@ -1253,6 +1417,30 @@
         const div = document.createElement("div");
         div.textContent = text;
         return div.innerHTML;
+      }
+
+      function formatCreatedAt(val) {
+        if (val === undefined || val === null || val === "") return "-";
+        // If numeric string, parse to int
+        let num = Number(val);
+        if (!Number.isNaN(num)) {
+          // Heuristics: if it's large (epoch millis), format date; otherwise show raw number
+          if (num > 1e12) {
+            try {
+              return new Date(num).toLocaleString();
+            } catch {
+              return String(val);
+            }
+          } else {
+            return String(val);
+          }
+        }
+        // ISO date
+        try {
+          return new Date(val).toLocaleString();
+        } catch {
+          return String(val);
+        }
       }
     </script>
   </body>

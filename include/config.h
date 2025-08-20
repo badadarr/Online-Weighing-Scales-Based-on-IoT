@@ -148,7 +148,7 @@
 // ==================== RFID AUTO-ENROLL CONFIG ====================
 // When enabled, unknown UIDs will be created automatically in Firebase and granted access
 #ifndef AUTO_ENROLL_RFID
-#define AUTO_ENROLL_RFID 1
+#define AUTO_ENROLL_RFID 0
 #endif
 
 #ifndef AUTO_ENROLL_DEFAULT_NAME

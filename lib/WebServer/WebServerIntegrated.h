@@ -81,6 +81,10 @@ public:
   bool addRFIDUserToFirebase(String uid, String name, String email);
   String getAuthorizedUsersFromFirebase();
   String getUserNameFromUID(String uid);
+  // Pending requests management
+  String getPendingRFIDRequests();
+  bool approveRFIDRequest(String uid, String name = "", String email = "");
+  bool rejectRFIDRequest(String uid);
   
   // RFID data access methods
   String getCurrentAuthorizedUser();
