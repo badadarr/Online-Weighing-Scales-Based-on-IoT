@@ -1,13 +1,23 @@
 #include "WebServerIntegrated.h"
+// Prefer Arduino-ESP32 WebServer; fall back to ESP32WebServer if needed
+#if __has_include(<WebServer.h>)
+#include <WebServer.h>
+#elif __has_include(<ESP32WebServer.h>)
+#include <ESP32WebServer.h>
+using WebServer = ESP32WebServer;
+#else
+#error "No suitable WebServer header found (WebServer.h or ESP32WebServer.h)"
+#endif
 #include "pinManager.h"
 #include "Indicator.h"
 #include <SPIFFS.h>
 #include "config.h"
-#include "SensorReader.h"
+#include "../SensorReader/SensorReader.h"
 #include "SessionManager.h"
 #include "RFIDReader.h"
 #include "WiFiManager.h"
 #include <EEPROM.h>
+#include <ArduinoJson.h>
 #include <Firebase_ESP_Client.h>
 
 TimbangangWebServerIntegrated webServer;
@@ -28,7 +38,7 @@ TimbangangWebServerIntegrated::TimbangangWebServerIntegrated()
     sessionActive = false;
     sessionUserUID = "";
     sessionStartTime = 0;
-    
+
     // Initialize status tracking
     lastLoggedOutUser = "";
     lastLogoutTime = 0;
@@ -108,10 +118,6 @@ void TimbangangWebServerIntegrated::init()
 
     server->on("/api/test-buzzer", HTTP_POST, [this]()
                { handleTestBuzzer(); });
-
-
-
-
 
     // Essential tare endpoint
     server->on("/api/tare", HTTP_POST, [this]()
@@ -227,9 +233,9 @@ void TimbangangWebServerIntegrated::init()
       server->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to add user\"}");
     } });
 
-        // RFID status (auto-enroll visibility, last scan)
-        server->on("/api/rfid/status", HTTP_GET, [this]()
-                             {
+    // RFID status (auto-enroll visibility, last scan)
+    server->on("/api/rfid/status", HTTP_GET, [this]()
+               {
         DynamicJsonDocument doc(512);
         doc["success"] = true;
         doc["autoEnrollEnabled"] = (bool)AUTO_ENROLL_RFID;
@@ -244,16 +250,16 @@ void TimbangangWebServerIntegrated::init()
         String out; serializeJson(doc, out);
         server->send(200, "application/json", out); });
 
-        // Clear local RFID cache/UIDs to force auto-enroll on next scan
-        server->on("/api/rfid/clear-cache", HTTP_POST, [this]()
-                             {
+    // Clear local RFID cache/UIDs to force auto-enroll on next scan
+    server->on("/api/rfid/clear-cache", HTTP_POST, [this]()
+               {
         extern void clearRFIDUsersCache();
         clearRFIDUsersCache();
         server->send(200, "application/json", "{\"success\":true,\"message\":\"RFID cache cleared\"}"); });
 
-        // Label/rename a UID after auto-enroll
-        server->on("/api/rfid/label", HTTP_POST, [this]()
-                             {
+    // Label/rename a UID after auto-enroll
+    server->on("/api/rfid/label", HTTP_POST, [this]()
+               {
         if (!server->hasArg("plain")) {
             server->send(400, "application/json", "{\"success\":false,\"message\":\"No data received\"}");
             return;
@@ -385,13 +391,16 @@ void TimbangangWebServerIntegrated::optimizedFirebaseSync()
     // Check if there are pending RFID operations that need Firebase
     static unsigned long lastRFIDSync = 0;
     unsigned long currentTime = millis();
-    
+
     // Only sync RFID data if enough time has passed and Firebase is ready
-    if (currentTime - lastRFIDSync > 30000 && Firebase.ready()) { // Every 30 seconds
+    if (currentTime - lastRFIDSync > 30000 && Firebase.ready())
+    { // Every 30 seconds
         Serial.println("[WEB] Performing RFID data sync...");
         collectRFIDUsersData();
         lastRFIDSync = currentTime;
-    } else {
+    }
+    else
+    {
         Serial.println("[WEB] Firebase sync skipped - preventing SSL conflicts");
     }
 }
@@ -455,6 +464,20 @@ void TimbangangWebServerIntegrated::setSessionStatus(bool active, String uid)
     {
         sessionStartTime = 0;
     }
+
+    // Record login/logout event to Firebase for cross-system visibility (inventory app)
+    extern FirebaseData fbdo;
+    if (Firebase.ready())
+    {
+        FirebaseJson evt;
+        evt.set("event", active ? "login" : "logout");
+        evt.set("uid", uid);
+        // Avoid tight coupling for name lookup; inventory can resolve via rfid_users
+        evt.set("timestamp", (long long)millis());
+        evt.set("device_id", DEVICE_ID);
+        String logPath = String("/devices/") + DEVICE_ID + "/log/" + String(millis());
+        Firebase.RTDB.setJSON(&fbdo, logPath, &evt);
+    }
 }
 
 void TimbangangWebServerIntegrated::setLogoutStatus(String uid)
@@ -495,7 +518,8 @@ String TimbangangWebServerIntegrated::getStatusJSON()
     if (sessionActive && !sessionUserUID.isEmpty())
     {
         String userName = getUserNameFromUID(sessionUserUID);
-        if (userName.isEmpty()) {
+        if (userName.isEmpty())
+        {
             userName = "User " + sessionUserUID.substring(0, 4);
         }
         doc["access_status"] = "Akses diberikan - Selamat datang " + userName;
@@ -503,7 +527,8 @@ String TimbangangWebServerIntegrated::getStatusJSON()
     else if (!lastLoggedOutUser.isEmpty() && (millis() - lastLogoutTime) < 10000) // Show logout message for 10 seconds
     {
         String userName = getUserNameFromUID(lastLoggedOutUser);
-        if (userName.isEmpty()) {
+        if (userName.isEmpty())
+        {
             userName = "User " + lastLoggedOutUser.substring(0, 4);
         }
         doc["access_status"] = "User " + userName + " telah logout";
@@ -511,9 +536,12 @@ String TimbangangWebServerIntegrated::getStatusJSON()
     else if (!lastRFID.isEmpty())
     {
         String userName = getUserNameFromUID(lastRFID);
-        if (userName.isEmpty()) {
+        if (userName.isEmpty())
+        {
             doc["access_status"] = "Akses ditolak - RFID tidak dikenal";
-        } else {
+        }
+        else
+        {
             doc["access_status"] = "Akses ditolak untuk " + userName;
         }
     }
@@ -661,14 +689,15 @@ void TimbangangWebServerIntegrated::finishBaseCalibration(float currentWeight)
 bool TimbangangWebServerIntegrated::addRFIDUserToFirebase(String uid, String name, String email)
 {
     extern FirebaseData fbdo;
-    
+
     Serial.println("[RFID] Add user request: " + uid + " - " + name);
-    
-    if (!Firebase.ready()) {
+
+    if (!Firebase.ready())
+    {
         Serial.println("[RFID] Firebase not ready for adding user");
         return false;
     }
-    
+
     // Create user data JSON
     FirebaseJson userJson;
     userJson.set("uid", uid);
@@ -677,43 +706,47 @@ bool TimbangangWebServerIntegrated::addRFIDUserToFirebase(String uid, String nam
     userJson.set("active", true);
     userJson.set("created_at", String(millis()));
     userJson.set("device_id", DEVICE_ID);
-    
+
     // Try multiple paths to ensure compatibility
     String paths[] = {
         "/rfid_users/" + uid,
         "/authorized_users/" + uid,
-        "/users/" + uid
-    };
-    
+        "/users/" + uid};
+
     bool success = false;
-    
-    for (int i = 0; i < 3; i++) {
+
+    for (int i = 0; i < 3; i++)
+    {
         Serial.println("[RFID] Trying to add user to path: " + paths[i]);
-        
-        if (Firebase.RTDB.setJSON(&fbdo, paths[i], &userJson)) {
+
+        if (Firebase.RTDB.setJSON(&fbdo, paths[i], &userJson))
+        {
             Serial.println("[RFID] User added successfully to: " + paths[i]);
             success = true;
             break;
-        } else {
+        }
+        else
+        {
             Serial.println("[RFID] Failed to add user to " + paths[i] + ": " + fbdo.errorReason());
         }
     }
-    
-    if (success) {
+
+    if (success)
+    {
         // Also add to local storage for immediate access
         extern void storeUID(String uid);
         storeUID(uid);
-        
+
         // Force refresh RFID cache
         extern bool forceRefreshRFIDCache();
         delay(1000); // Wait for Firebase to propagate
         forceRefreshRFIDCache();
-        
+
         Serial.println("[RFID] User " + uid + " (" + name + ") added successfully");
         extern int getCachedUsersCount();
         Serial.println("[RFID] Total cached users: " + String(getCachedUsersCount()));
     }
-    
+
     return success;
 }
 
@@ -726,42 +759,72 @@ String TimbangangWebServerIntegrated::getAuthorizedUsersFromFirebase()
     DynamicJsonDocument doc(4096);
     JsonArray users = doc.to<JsonArray>();
 
-    if (Firebase.ready()) {
+    if (Firebase.ready())
+    {
         // Prefer /rfid_users (auto-enroll path)
-        if (Firebase.RTDB.getJSON(&fbdo, "/rfid_users")) {
+        if (Firebase.RTDB.getJSON(&fbdo, "/rfid_users"))
+        {
             FirebaseJson &json = fbdo.jsonObject();
             size_t len = json.iteratorBegin();
-            String key, value; int type = 0;
-            for (size_t i = 0; i < len; i++) {
+            String key, value;
+            int type = 0;
+            for (size_t i = 0; i < len; i++)
+            {
                 json.iteratorGet(i, type, key, value);
-                if (type == FirebaseJson::JSON_OBJECT) {
-                    FirebaseJson userJson; userJson.setJsonData(value);
-                    String name = ""; String email = ""; bool active = true; String uid = key;
+                if (type == FirebaseJson::JSON_OBJECT)
+                {
+                    FirebaseJson userJson;
+                    userJson.setJsonData(value);
+                    String name = "";
+                    String email = "";
+                    bool active = true;
+                    String uid = key;
                     FirebaseJsonData jd;
-                    if (userJson.get(jd, "name")) name = jd.stringValue;
-                    if (userJson.get(jd, "email")) email = jd.stringValue;
-                    if (userJson.get(jd, "active")) active = jd.boolValue;
-                    if (userJson.get(jd, "uid") && jd.stringValue.length()>0) uid = jd.stringValue;
+                    if (userJson.get(jd, "name"))
+                        name = jd.stringValue;
+                    if (userJson.get(jd, "email"))
+                        email = jd.stringValue;
+                    if (userJson.get(jd, "active"))
+                        active = jd.boolValue;
+                    if (userJson.get(jd, "uid") && jd.stringValue.length() > 0)
+                        uid = jd.stringValue;
                     JsonObject u = users.createNestedObject();
-                    u["uid"] = uid; u["name"] = name.length()? name : uid; u["email"] = email; u["active"] = active;
+                    u["uid"] = uid;
+                    u["name"] = name.length() ? name : uid;
+                    u["email"] = email;
+                    u["active"] = active;
                 }
             }
             json.iteratorEnd();
-        } else if (Firebase.RTDB.getJSON(&fbdo, "/authorized_users")) {
+        }
+        else if (Firebase.RTDB.getJSON(&fbdo, "/authorized_users"))
+        {
             FirebaseJson &json = fbdo.jsonObject();
             size_t len = json.iteratorBegin();
-            String key, value; int type = 0;
-            for (size_t i = 0; i < len; i++) {
+            String key, value;
+            int type = 0;
+            for (size_t i = 0; i < len; i++)
+            {
                 json.iteratorGet(i, type, key, value);
-                if (type == FirebaseJson::JSON_OBJECT) {
-                    FirebaseJson userJson; userJson.setJsonData(value);
-                    String name = ""; String email = ""; bool authorized = false;
+                if (type == FirebaseJson::JSON_OBJECT)
+                {
+                    FirebaseJson userJson;
+                    userJson.setJsonData(value);
+                    String name = "";
+                    String email = "";
+                    bool authorized = false;
                     FirebaseJsonData jd;
-                    if (userJson.get(jd, "name")) name = jd.stringValue;
-                    if (userJson.get(jd, "authorized")) authorized = jd.boolValue;
-                    if (authorized) {
+                    if (userJson.get(jd, "name"))
+                        name = jd.stringValue;
+                    if (userJson.get(jd, "authorized"))
+                        authorized = jd.boolValue;
+                    if (authorized)
+                    {
                         JsonObject u = users.createNestedObject();
-                        u["uid"] = key; u["name"] = name.length()? name : key; u["email"] = email; u["active"] = true;
+                        u["uid"] = key;
+                        u["name"] = name.length() ? name : key;
+                        u["email"] = email;
+                        u["active"] = true;
                     }
                 }
             }
@@ -770,21 +833,28 @@ String TimbangangWebServerIntegrated::getAuthorizedUsersFromFirebase()
     }
 
     // Fallback to local storage (UIDs only)
-    if (users.size() == 0) {
+    if (users.size() == 0)
+    {
         String cached = getAllStoredUIDs();
         // Expected cached format: ["UID1","UID2",...]
         DynamicJsonDocument tmp(2048);
         DeserializationError e = deserializeJson(tmp, cached);
-    if (!e && tmp.is<JsonArray>()) {
-            for (JsonVariant v : tmp.as<JsonArray>()) {
+        if (!e && tmp.is<JsonArray>())
+        {
+            for (JsonVariant v : tmp.as<JsonArray>())
+            {
                 String uid = v.as<String>();
                 JsonObject u = users.createNestedObject();
-        u["uid"] = uid; u["name"] = uid; u["email"] = ""; u["active"] = true;
+                u["uid"] = uid;
+                u["name"] = uid;
+                u["email"] = "";
+                u["active"] = true;
             }
         }
     }
 
-    String out; serializeJson(users, out);
+    String out;
+    serializeJson(users, out);
     return out;
 }
 
@@ -793,93 +863,136 @@ String TimbangangWebServerIntegrated::getPendingRFIDRequests()
     extern FirebaseData fbdo;
     DynamicJsonDocument doc(4096);
     JsonArray arr = doc.to<JsonArray>();
-    if (Firebase.ready()) {
-        if (Firebase.RTDB.getJSON(&fbdo, "/rfid_requests")) {
+    if (Firebase.ready())
+    {
+        if (Firebase.RTDB.getJSON(&fbdo, "/rfid_requests"))
+        {
             FirebaseJson &json = fbdo.jsonObject();
             size_t len = json.iteratorBegin();
-            String key, value; int type = 0; FirebaseJsonData jd;
-            for (size_t i=0;i<len;i++){
+            String key, value;
+            int type = 0;
+            FirebaseJsonData jd;
+            for (size_t i = 0; i < len; i++)
+            {
                 json.iteratorGet(i, type, key, value);
-                if (type==FirebaseJson::JSON_OBJECT){
-                    FirebaseJson req; req.setJsonData(value);
-                    String status=""; bool approved=false; String device=""; String created=""; String name=""; String email="";
-                    if (req.get(jd, "status")) status = jd.stringValue;
-                    if (req.get(jd, "approved")) approved = jd.boolValue;
-                    if (req.get(jd, "device_id")) device = jd.stringValue;
-                    if (req.get(jd, "request_time")) created = jd.stringValue;
-                    if (req.get(jd, "name")) name = jd.stringValue;
-                    if (req.get(jd, "email")) email = jd.stringValue;
-                    if (!approved && (status=="pending" || status=="")){
+                if (type == FirebaseJson::JSON_OBJECT)
+                {
+                    FirebaseJson req;
+                    req.setJsonData(value);
+                    String status = "";
+                    bool approved = false;
+                    String device = "";
+                    String created = "";
+                    String name = "";
+                    String email = "";
+                    if (req.get(jd, "status"))
+                        status = jd.stringValue;
+                    if (req.get(jd, "approved"))
+                        approved = jd.boolValue;
+                    if (req.get(jd, "device_id"))
+                        device = jd.stringValue;
+                    if (req.get(jd, "request_time"))
+                        created = jd.stringValue;
+                    if (req.get(jd, "name"))
+                        name = jd.stringValue;
+                    if (req.get(jd, "email"))
+                        email = jd.stringValue;
+                    if (!approved && (status == "pending" || status == ""))
+                    {
                         JsonObject o = arr.createNestedObject();
-                        o["uid"]=key; o["device_id"]=device; o["request_time"]=created; o["name"]=name; o["email"]=email;
+                        o["uid"] = key;
+                        o["device_id"] = device;
+                        o["request_time"] = created;
+                        o["name"] = name;
+                        o["email"] = email;
                     }
                 }
             }
             json.iteratorEnd();
         }
     }
-    String out; serializeJson(arr, out); return out;
+    String out;
+    serializeJson(arr, out);
+    return out;
 }
 
 bool TimbangangWebServerIntegrated::approveRFIDRequest(String uid, String name, String email)
 {
     extern FirebaseData fbdo;
-    if (!Firebase.ready()) return false;
+    if (!Firebase.ready())
+        return false;
     // 1) Create user in /rfid_users
-    FirebaseJson user; user.set("uid", uid); user.set("name", name.length()?name:uid); user.set("email", email); user.set("active", true); user.set("created_at", String(millis())); user.set("device_id", DEVICE_ID);
-    String userPath = String("/rfid_users/")+uid;
-    if (!Firebase.RTDB.setJSON(&fbdo, userPath, &user)) return false;
+    FirebaseJson user;
+    user.set("uid", uid);
+    user.set("name", name.length() ? name : uid);
+    user.set("email", email);
+    user.set("active", true);
+    user.set("created_at", String(millis()));
+    user.set("device_id", DEVICE_ID);
+    String userPath = String("/rfid_users/") + uid;
+    if (!Firebase.RTDB.setJSON(&fbdo, userPath, &user))
+        return false;
     // 2) Mark request approved
-    String reqPath = String("/rfid_requests/")+uid+"/status"; Firebase.RTDB.setString(&fbdo, reqPath, "approved");
-    Firebase.RTDB.setBool(&fbdo, String("/rfid_requests/")+uid+"/approved", true);
+    String reqPath = String("/rfid_requests/") + uid + "/status";
+    Firebase.RTDB.setString(&fbdo, reqPath, "approved");
+    Firebase.RTDB.setBool(&fbdo, String("/rfid_requests/") + uid + "/approved", true);
     // 3) Add to local cache for immediate access
-    extern void storeUID(String uid); storeUID(uid);
-    extern bool forceRefreshRFIDCache(); delay(300); forceRefreshRFIDCache();
+    extern void storeUID(String uid);
+    storeUID(uid);
+    extern bool forceRefreshRFIDCache();
+    delay(300);
+    forceRefreshRFIDCache();
     return true;
 }
 
 bool TimbangangWebServerIntegrated::rejectRFIDRequest(String uid)
 {
     extern FirebaseData fbdo;
-    if (!Firebase.ready()) return false;
-    String base = String("/rfid_requests/")+uid;
-    bool ok1 = Firebase.RTDB.setString(&fbdo, base+"/status", "rejected");
-    bool ok2 = Firebase.RTDB.deleteNode(&fbdo, base+"/approved");
+    if (!Firebase.ready())
+        return false;
+    String base = String("/rfid_requests/") + uid;
+    bool ok1 = Firebase.RTDB.setString(&fbdo, base + "/status", "rejected");
+    bool ok2 = Firebase.RTDB.deleteNode(&fbdo, base + "/approved");
     return ok1 || ok2;
 }
 
 String TimbangangWebServerIntegrated::getUserNameFromUID(String uid)
 {
     extern FirebaseData fbdo;
-    
-    if (!Firebase.ready() || uid.isEmpty()) {
+
+    if (!Firebase.ready() || uid.isEmpty())
+    {
         return "";
     }
-    
+
     // Try to get user name from authorized_users path
     String path = String("/authorized_users/") + uid + "/name";
-    if (Firebase.RTDB.getString(&fbdo, path.c_str())) {
+    if (Firebase.RTDB.getString(&fbdo, path.c_str()))
+    {
         String name = fbdo.stringData();
-        if (name.length() > 0) {
+        if (name.length() > 0)
+        {
             return name;
         }
     }
-    
+
     // Try alternative paths
     String altPaths[] = {
         String("/rfid_users/") + uid + "/name",
-        String("/users/") + uid + "/name"
-    };
-    
-    for (int i = 0; i < 2; i++) {
-        if (Firebase.RTDB.getString(&fbdo, altPaths[i].c_str())) {
+        String("/users/") + uid + "/name"};
+
+    for (int i = 0; i < 2; i++)
+    {
+        if (Firebase.RTDB.getString(&fbdo, altPaths[i].c_str()))
+        {
             String name = fbdo.stringData();
-            if (name.length() > 0) {
+            if (name.length() > 0)
+            {
                 return name;
             }
         }
     }
-    
+
     // If no name found, return empty string
     return "";
 }
@@ -915,11 +1028,10 @@ bool TimbangangWebServerIntegrated::collectRFIDUsersData()
     return collectRFIDUsersData();
 }
 
-
-
 void TimbangangWebServerIntegrated::handleBaseMode()
 {
-    if (!server->hasArg("plain")) {
+    if (!server->hasArg("plain"))
+    {
         server->send(400, "application/json", "{\"status\":\"error\",\"message\":\"No data received\"}");
         return;
     }
@@ -929,26 +1041,34 @@ void TimbangangWebServerIntegrated::handleBaseMode()
     deserializeJson(doc, body);
 
     String mode = doc["mode"].as<String>();
-    
-    if (mode == "on") {
+
+    if (mode == "on")
+    {
         // Set base mode with current weight
         float currentWeight = lastWeightData.filtered;
-        if (currentWeight > 0.01) {
+        if (currentWeight > 0.01)
+        {
             setBaseWeight(currentWeight);
             setBaseMode(true);
             saveConfiguration();
             Serial.println(String("[WEB] Base mode ON: ") + String(currentWeight, 3) + " kg");
             server->send(200, "application/json", "{\"status\":\"success\",\"message\":\"Base mode activated\"}");
-        } else {
+        }
+        else
+        {
             server->send(400, "application/json", "{\"status\":\"error\",\"message\":\"No weight detected\"}");
         }
-    } else if (mode == "off") {
+    }
+    else if (mode == "off")
+    {
         setBaseMode(false);
         setBaseWeight(0.0);
         saveConfiguration();
         Serial.println("[WEB] Base mode OFF");
         server->send(200, "application/json", "{\"status\":\"success\",\"message\":\"Normal mode activated\"}");
-    } else {
+    }
+    else
+    {
         server->send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid mode\"}");
     }
 }
@@ -1040,7 +1160,7 @@ void TimbangangWebServerIntegrated::handleWiFiConfig()
     // Save WiFi credentials
     if (wifiManager.saveWiFiCredentials(ssid, password))
     {
-    Serial.println(String("[WEB] WiFi credentials saved: ") + ssid);
+        Serial.println(String("[WEB] WiFi credentials saved: ") + ssid);
         server->send(200, "application/json", "{\"status\":\"success\",\"message\":\"WiFi credentials saved. Device will restart to apply changes.\"}");
 
         // Restart device after a delay to apply new WiFi settings
@@ -1138,18 +1258,18 @@ void TimbangangWebServerIntegrated::handleWiFiTest()
         String testIP = WiFi.localIP().toString();
         int testRSSI = WiFi.RSSI();
 
-    String resp = String("{\"status\":\"success\",\"message\":\"Connection test successful\",\"ip\":\"") +
-               testIP + "\",\"rssi\":" + String(testRSSI) + "}";
-    server->send(200, "application/json", resp);
+        String resp = String("{\"status\":\"success\",\"message\":\"Connection test successful\",\"ip\":\"") +
+                      testIP + "\",\"rssi\":" + String(testRSSI) + "}";
+        server->send(200, "application/json", resp);
 
-    Serial.println(String("[WEB] WiFi test successful: ") + testIP);
+        Serial.println(String("[WEB] WiFi test successful: ") + testIP);
     }
     else
     {
-    server->send(200, "application/json",
-             String("{\"status\":\"error\",\"message\":\"Failed to connect to ") + ssid + "\"}");
+        server->send(200, "application/json",
+                     String("{\"status\":\"error\",\"message\":\"Failed to connect to ") + ssid + "\"}");
 
-    Serial.println(String("[WEB] WiFi test failed for: ") + ssid);
+        Serial.println(String("[WEB] WiFi test failed for: ") + ssid);
     }
 
     // Reconnect to original network if we were connected

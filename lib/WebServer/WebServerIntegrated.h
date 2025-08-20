@@ -1,18 +1,18 @@
 #pragma once
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WebServer.h>  // Use regular WebServer instead of AsyncWebServer
-#include <ArduinoJson.h>
 #include <EEPROM.h>
 #include <SPIFFS.h>
 #include "config.h"
-#include "SensorReader.h"
-#include "SessionManager.h"
+#include "types.h" // shared WeightData type
+
+// Forward declare WebServer (actual header included in .cpp)
+class WebServer;
 
 // Use regular WebServer to avoid async_tcp conflicts
 class TimbangangWebServerIntegrated {
 private:
-  WebServer* server;  // Regular WebServer instead of AsyncWebServer
+  WebServer* server;   // Regular WebServer instead of AsyncWebServer
   
   // Local data cache
   bool baseMode;

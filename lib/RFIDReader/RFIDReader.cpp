@@ -9,7 +9,7 @@
 #include "Indicator.h"
 #include "lcd_display.h"
 #include "SessionManager.h"
-#include "WebServerMicroservice.h"
+#include "WebServerIntegrated.h"
 
 // In bypass mode, provide silent no-op implementations to avoid logs and network calls
 #if BYPASS_RFID
@@ -279,8 +279,8 @@ void requestRFIDRegistration(String uid)
 
   if (Firebase.RTDB.setJSON(&fbdo, path, &json))
   {
-  Serial.print("[RFID] Authorization request sent for: ");
-  Serial.println(uid);
+    Serial.print("[RFID] Authorization request sent for: ");
+    Serial.println(uid);
     lcdShowStatus("Permintaan Dikirim");
   }
   else
@@ -326,22 +326,22 @@ bool addRFIDUser(String uid, String name, String email)
 
   for (int i = 0; i < 3; i++)
   {
-  Serial.print("[RFID] Trying to add user to path: ");
-  Serial.println(paths[i]);
+    Serial.print("[RFID] Trying to add user to path: ");
+    Serial.println(paths[i]);
 
     if (Firebase.RTDB.setJSON(&fbdo, paths[i], &userJson))
     {
-  Serial.print("[RFID] User added successfully to: ");
-  Serial.println(paths[i]);
+      Serial.print("[RFID] User added successfully to: ");
+      Serial.println(paths[i]);
       success = true;
       break;
     }
     else
     {
-  Serial.print("[RFID] Failed to add user to ");
-  Serial.print(paths[i]);
-  Serial.print(": ");
-  Serial.println(fbdo.errorReason());
+      Serial.print("[RFID] Failed to add user to ");
+      Serial.print(paths[i]);
+      Serial.print(": ");
+      Serial.println(fbdo.errorReason());
     }
   }
 
@@ -354,13 +354,13 @@ bool addRFIDUser(String uid, String name, String email)
     delay(1000); // Wait for Firebase to propagate
     forceRefreshRFIDCache();
 
-  Serial.print("[RFID] User ");
-  Serial.print(uid);
-  Serial.print(" (");
-  Serial.print(name);
-  Serial.println(") added successfully");
-  Serial.print("[RFID] Total cached users: ");
-  Serial.println(String(getCachedUsersCount()));
+    Serial.print("[RFID] User ");
+    Serial.print(uid);
+    Serial.print(" (");
+    Serial.print(name);
+    Serial.println(") added successfully");
+    Serial.print("[RFID] Total cached users: ");
+    Serial.println(String(getCachedUsersCount()));
     lcdShowStatus("User Ditambahkan!");
   }
   else
@@ -423,12 +423,12 @@ static bool autoEnrollIfEnabled(const String &uid)
 // Grant access to weighing system
 bool grantWeighingAccess(String uid)
 {
-  extern TimbangangMicroserviceClient webMicroservice;
+  // Use integrated web server
 
   if (!isUIDAuthorized(uid))
   {
-  Serial.print("[ACCESS] Unauthorized UID: ");
-  Serial.println(uid);
+    Serial.print("[ACCESS] Unauthorized UID: ");
+    Serial.println(uid);
     lcdShowError("Akses Ditolak!");
     setColor(255, 0, 0); // Red
     buzz(1000);          // Long buzz for denied
@@ -457,7 +457,7 @@ bool grantWeighingAccess(String uid)
   buzz(200);
 
   // Update web server
-  webMicroservice.setRFIDStatus(uid);
+  webServer.setRFIDStatus(uid);
 
   // Show weighing ready message and show quality status
   lcdShowStatus("Siap Menimbang");
@@ -473,7 +473,7 @@ bool grantWeighingAccess(String uid)
 // Reset access control
 void resetAccess()
 {
-  extern TimbangangMicroserviceClient webMicroservice;
+  // Use integrated web server
 
   // Logout from session if active
   if (sessionManager.isSessionActive())
@@ -490,7 +490,7 @@ void resetAccess()
   setColor(255, 255, 0); // Yellow for waiting
 
   // Update web server
-  webMicroservice.setRFIDStatus("");
+  webServer.setRFIDStatus("");
 }
 
 // Check if weighing access is currently granted
@@ -527,8 +527,8 @@ void extendAccess()
     static unsigned long lastExtendLog = 0;
     if (millis() - lastExtendLog > 30000)
     {
-  Serial.print("[ACCESS] Access time extended for: ");
-  Serial.println(authorizedUser);
+      Serial.print("[ACCESS] Access time extended for: ");
+      Serial.println(authorizedUser);
       lastExtendLog = millis();
     }
   }
@@ -555,18 +555,18 @@ void processPendingAddUserRequests()
       Firebase.ready())
   {
 
-  Serial.print("[RFID] Processing pending add user request: ");
-  Serial.println(pendingAddUserUID);
+    Serial.print("[RFID] Processing pending add user request: ");
+    Serial.println(pendingAddUserUID);
 
     if (addRFIDUser(pendingAddUserUID, pendingAddUserName, ""))
     {
-  Serial.print("[RFID] Pending user added successfully: ");
-  Serial.println(pendingAddUserUID);
+      Serial.print("[RFID] Pending user added successfully: ");
+      Serial.println(pendingAddUserUID);
     }
     else
     {
-  Serial.print("[RFID] Failed to add pending user: ");
-  Serial.println(pendingAddUserUID);
+      Serial.print("[RFID] Failed to add pending user: ");
+      Serial.println(pendingAddUserUID);
     }
 
     // Clear pending request
@@ -625,8 +625,8 @@ bool processRFIDTag(String uid)
     if (sessionManager.isSessionActive() && sessionManager.getCurrentUserUID() == uid)
     {
       // User wants to logout - same RFID tapped again
-  Serial.print("[ACCESS] Logout detected for: ");
-  Serial.println(uid);
+      Serial.print("[ACCESS] Logout detected for: ");
+      Serial.println(uid);
       lcdShowStatus("Logout...");
       setColor(255, 165, 0); // Orange
       buzz(SESSION_LOGOUT_SOUND);
@@ -653,8 +653,8 @@ bool processRFIDTag(String uid)
     {
       // Not in session yet, just extend access
       extendAccess();
-  Serial.print("[ACCESS] Access extended for: ");
-  Serial.println(uid);
+      Serial.print("[ACCESS] Access extended for: ");
+      Serial.println(uid);
       lcdShowStatus("Akses Diperpanjang");
       setColor(0, 255, 0); // Green
       buzz(100);
@@ -764,8 +764,8 @@ bool collectRFIDUsersData()
   for (int pathIndex = 0; pathIndex < 3; pathIndex++)
   {
     String path = paths[pathIndex];
-  Serial.print("[RFID] Trying path: ");
-  Serial.println(path);
+    Serial.print("[RFID] Trying path: ");
+    Serial.println(path);
 
     if (Firebase.RTDB.getJSON(&fbdo, path))
     {
@@ -777,8 +777,8 @@ bool collectRFIDUsersData()
         int type = 0;
         int count = 0;
 
-  Serial.print("[RFID] Processing data from: ");
-  Serial.println(path);
+        Serial.print("[RFID] Processing data from: ");
+        Serial.println(path);
 
         for (size_t i = 0; i < len; i++)
         {
@@ -860,23 +860,23 @@ bool collectRFIDUsersData()
       }
       else
       {
-  Serial.print("[RFID] Invalid data type from: ");
-  Serial.println(path);
+        Serial.print("[RFID] Invalid data type from: ");
+        Serial.println(path);
       }
     }
     else
     {
-  Serial.print("[RFID] Failed to access ");
-  Serial.print(path);
-  Serial.print(": ");
+      Serial.print("[RFID] Failed to access ");
+      Serial.print(path);
+      Serial.print(": ");
       Serial.println(fbdo.errorReason());
 
       // If permission denied, continue to next path
       if (fbdo.errorReason().indexOf("Permission denied") >= 0)
       {
-  Serial.print("[RFID] Permission denied for ");
-  Serial.print(path);
-  Serial.println(", trying next path...");
+        Serial.print("[RFID] Permission denied for ");
+        Serial.print(path);
+        Serial.println(", trying next path...");
         continue;
       }
     }
@@ -901,8 +901,8 @@ bool syncRFIDUsersFromFirebase()
   for (int i = 0; i < 3; i++)
   {
     String path = requestPaths[i];
-  Serial.print("[RFID] Trying request path: ");
-  Serial.println(path);
+    Serial.print("[RFID] Trying request path: ");
+    Serial.println(path);
 
     if (Firebase.RTDB.getJSON(&fbdo, path))
     {
@@ -914,8 +914,8 @@ bool syncRFIDUsersFromFirebase()
         int type = 0;
         int count = 0;
 
-  Serial.print("[RFID] Processing data from: ");
-  Serial.println(path);
+        Serial.print("[RFID] Processing data from: ");
+        Serial.println(path);
 
         for (size_t j = 0; j < len; j++)
         {
@@ -1024,9 +1024,9 @@ bool syncRFIDUsersFromFirebase()
     }
     else
     {
-  Serial.print("[RFID] Failed to access ");
-  Serial.print(path);
-  Serial.print(": ");
+      Serial.print("[RFID] Failed to access ");
+      Serial.print(path);
+      Serial.print(": ");
       Serial.println(fbdo.errorReason());
     }
   }

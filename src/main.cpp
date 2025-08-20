@@ -1,7 +1,7 @@
 /**
  * @file main.cpp
  * @brief Program utama sistem timbangan IoT dengan kontrol akses RFID
- * @details Mengintegrasikan semua modul: sensor HX711, RFID MFRC522, LCD, 
+ * @details Mengintegrasikan semua modul: sensor HX711, RFID MFRC522, LCD,
  *          web server, Firebase, dan session management untuk sistem timbangan
  *          yang dapat diakses secara remote dengan kontrol akses berbasis RFID
  */
@@ -94,11 +94,11 @@ void setup()
   Serial.println("[RFID] BYPASS enabled. Skipping RFID init.");
   lcdShowStatus("RFID Bypass Mode");
 #else
-  setupRFID();     // Inisialisasi RFID reader
+  setupRFID(); // Inisialisasi RFID reader
 #endif
   setupSensor();   // Inisialisasi sensor
   setupFirebase(); // Inisialisasi server / firebase
-  
+
   // Initialize session as inactive
   lcdShowStatus("Init Session...");
   sendingActive = false; // Start with sending inactive
@@ -133,8 +133,9 @@ void loop()
   // Feed watchdog secara berkala untuk mencegah system timeout
   static unsigned long lastWatchdogFeed = 0;
   unsigned long currentTime = millis();
-  
-  if (currentTime - lastWatchdogFeed > WATCHDOG_FEED_INTERVAL_MS) {
+
+  if (currentTime - lastWatchdogFeed > WATCHDOG_FEED_INTERVAL_MS)
+  {
     yield(); // Feed the watchdog
     lastWatchdogFeed = currentTime;
   }
@@ -156,33 +157,39 @@ void loop()
 #else
   handleRFIDAccess();
 #endif
-  
+
   // Check if weighing access is granted before proceeding (always granted in bypass)
 #if BYPASS_RFID
   bool accessGranted = true;
 #else
   bool accessGranted = isWeighingAccessGranted();
 #endif
-  if (!accessGranted) {
+  if (!accessGranted)
+  {
     // No access granted - show waiting message and skip weighing operations
     static unsigned long lastAccessMsg = 0;
-    if (currentTime - lastAccessMsg > 5000) {
+    if (currentTime - lastAccessMsg > 5000)
+    {
       lcdShowStatus("Tap RFID untuk Akses");
       setColor(255, 255, 0); // Yellow
       lastAccessMsg = currentTime;
     }
-    
+
     // Handle web server even without access
     webServer.handleClient();
     delay(100);
     return;
-  } else {
+  }
+  else
+  {
     // Show logout reminder periodically when in weighing session
     static unsigned long lastLogoutReminder = 0;
-    if (sessionManager.isSessionActive() && 
-        currentTime - lastLogoutReminder > 30000) { // Every 30 seconds
+    if (sessionManager.isSessionActive() &&
+        currentTime - lastLogoutReminder > 30000)
+    { // Every 30 seconds
       static bool showReminder = false;
-      if (showReminder) {
+      if (showReminder)
+      {
         lcdShowLogoutInstructions();
         delay(2000);
         lcdShowStatus("Siap Menimbang");
@@ -191,13 +198,14 @@ void loop()
       lastLogoutReminder = currentTime;
     }
   }
-  
+
   // Extend access time when weighing activity detected (skip in bypass)
 #if BYPASS_RFID
   // No session extension needed
 #else
   static unsigned long lastWeighingActivity = 0;
-  if (currentTime - lastWeighingActivity > 10000) { // Every 10 seconds instead of 1 second
+  if (currentTime - lastWeighingActivity > 10000)
+  { // Every 10 seconds instead of 1 second
     extendAccess();
     lastWeighingActivity = currentTime;
   }
@@ -206,66 +214,70 @@ void loop()
   // Handle web server requests (optimized with yield)
   webServer.handleClient();
   yield(); // Prevent watchdog timeout
-  
+
   // Optional: Handle integrated server loop (less frequent)
   static unsigned long lastWebLoop = 0;
-  if (currentTime - lastWebLoop > FIREBASE_SYNC_INTERVAL_MS) { // Every 15 seconds
+  if (currentTime - lastWebLoop > FIREBASE_SYNC_INTERVAL_MS)
+  { // Every 15 seconds
     webServer.loop();
     lastWebLoop = currentTime;
     yield(); // Prevent watchdog timeout
   }
-  
+
   // Check for access timeout (handled in handleRFIDAccess())
   // Access control is managed by RFID system
-  
+
   // Handle web requests
-  if (webTareRequested) {
+  if (webTareRequested)
+  {
     Serial.println("[WEB] Performing tare via web request");
     lcdShowStatus("Web Tare");
     performTare();
     webTareRequested = false;
   }
-  
-  if (webStopRequested) {
+
+  if (webStopRequested)
+  {
     Serial.println("[WEB] Resetting access via web request");
 #if BYPASS_RFID
-  // In bypass, don't reset session; just pause sending
-  sendingActive = false;
-  lastStableState = false;
-  lcdShowStatus("Bypass: Stopped");
+    // In bypass, don't reset session; just pause sending
+    sendingActive = false;
+    lastStableState = false;
+    lcdShowStatus("Bypass: Stopped");
 #else
-  resetAccess();
-  sendingActive = false;
-  lastStableState = false;
-  lcdShowStatus("Access Reset");
+    resetAccess();
+    sendingActive = false;
+    lastStableState = false;
+    lcdShowStatus("Access Reset");
 #endif
     webStopRequested = false;
   }
-  
-  if (systemCalibrationRequested) {
+
+  if (systemCalibrationRequested)
+  {
     Serial.println("\n=== WEB SYSTEM CALIBRATION ===");
     Serial.println("[WEB] Starting system calibration: " + String(systemCalibrationWeight, 3) + " kg");
     Serial.println("[WEB] Step 1: Ensure scale is empty and stable");
     lcdShowStatus("Web Calib: Empty");
     delay(3000);
-    
+
     Serial.println("[WEB] Step 2: Performing tare...");
     lcdShowStatus("Web Calib: Tare");
     performTare();
     delay(2000);
-    
+
     Serial.println("[WEB] Step 3: Place " + String(systemCalibrationWeight, 3) + " kg weight and wait...");
     lcdShowStatus("Place Weight");
     delay(5000);
-    
+
     Serial.println("[WEB] Step 4: Starting calibration...");
     lcdShowStatus("Calibrating...");
     Kalibrasi(systemCalibrationWeight);
-    
+
     Serial.println("[WEB] Step 5: Remove weight");
     lcdShowStatus("Remove Weight");
     delay(3000);
-    
+
     Serial.println("=== WEB CALIBRATION COMPLETE ===");
     lcdShowStatus("Calib Complete");
     systemCalibrationRequested = false;
@@ -368,18 +380,22 @@ void loop()
   if (currentTime - lastLCDUpdate >= LCD_UPDATE_INTERVAL_MS)
   {
     // Jika sedang menampilkan pesan sementara (misal IP), jangan timpa dulu
-    if (lcdTempMessageUntil && currentTime < lcdTempMessageUntil) {
+    if (lcdTempMessageUntil && currentTime < lcdTempMessageUntil)
+    {
       lastLCDUpdate = currentTime;
-    } else {
-      lcdShowBerat(beratDisplay); // Use corrected display weight
-    
-    // Show base mode status on LCD
-    static unsigned long lastBaseModeDisplay = 0;
-    if (currentTime - lastBaseModeDisplay >= 5000) { // Update every 5 seconds
-      lcdShowBaseMode(webServer.getBaseMode(), webServer.getBaseWeight());
-      lastBaseModeDisplay = currentTime;
     }
-    
+    else
+    {
+      lcdShowBerat(beratDisplay); // Use corrected display weight
+
+      // Show base mode status on LCD
+      static unsigned long lastBaseModeDisplay = 0;
+      if (currentTime - lastBaseModeDisplay >= 5000)
+      { // Update every 5 seconds
+        lcdShowBaseMode(webServer.getBaseMode(), webServer.getBaseWeight());
+        lastBaseModeDisplay = currentTime;
+      }
+
       lastLCDUpdate = currentTime;
     }
   }
@@ -424,22 +440,25 @@ void loop()
       }
       else if (stableDuration >= STABLE_DURATION_MS)
       {
-  // Allow sending when bypassing even without a session
-  if (
+        // Allow sending when bypassing even without a session
+        if (
 #if BYPASS_RFID
-      true
+            true
 #else
-      (sessionManager.isSessionActive() && sendingActive)
+            (sessionManager.isSessionActive() && sendingActive)
 #endif
-  ) {
+        )
+        {
           // Sudah stabil cukup lama, kirim ke Firebase
           webServer.setStabilizationStatus("sending", 0);
           sendBeratKeFirebase(berat);
-          setColor(0, 255, 0); // Hijau - berhasil kirim
+          setColor(0, 255, 0);       // Hijau - berhasil kirim
           lcdShowQuality("Sent OK"); // Changed to show Quality instead of Status
           Serial.println("[FIREBASE] Data stabil terkirim: " + berat + " kg");
           buzz(BUZZ_SUCCESS); // Success confirmation
-        } else {
+        }
+        else
+        {
           // Session not active, don't send data
           setColor(255, 255, 0); // Yellow - no session
           lcdShowQuality("No Session");
@@ -450,18 +469,23 @@ void loop()
         lastStableState = false;
         lastStableWeight = 0; // Reset berat stabil
         webServer.setStabilizationStatus("standby", 0);
-        
+
         // Show success message longer and then show quality
         delay(2000); // Show "Sent OK" for 2 seconds
         // Show quality instead of clearing the line
-        if (correctedWeightData.quality == "stable") {
+        if (correctedWeightData.quality == "stable")
+        {
           lcdShowQuality("Stable");
-        } else if (correctedWeightData.quality == "good") {
+        }
+        else if (correctedWeightData.quality == "good")
+        {
           lcdShowQuality("Good");
-        } else {
+        }
+        else
+        {
           lcdShowQuality("Ready");
         }
-        
+
         // Add delay to prevent immediate re-triggering
         delay(1000); // Additional 1 second pause
       }
@@ -483,10 +507,11 @@ void loop()
       Serial.println("[WEIGHT] Stabilisasi dibatalkan - Weight: " + String(finalWeight, 3) + ", Stable: " + String(correctedWeightData.isStable));
       lastStableState = false;
       lastStableWeight = 0; // Reset berat stabil
-      
+
       // Show quality status when going back to standby
       static unsigned long lastStandbyClear = 0;
-      if (finalWeight < MIN_WEIGHT && currentTime - lastStandbyClear > 3000) {
+      if (finalWeight < MIN_WEIGHT && currentTime - lastStandbyClear > 3000)
+      {
         lcdShowQuality("Ready"); // Show quality status instead of clearing
         lastStandbyClear = currentTime;
       }
@@ -500,7 +525,8 @@ void loop()
     if (correctedWeightData.quality == "motion")
     {
       setColor(255, 255, 0); // Kuning - gerakan
-      if (currentTime - lastFirebaseDisplayUpdate > 1000) { // Update every 1 second
+      if (currentTime - lastFirebaseDisplayUpdate > 1000)
+      { // Update every 1 second
         lcdShowQuality("Motion");
         lastFirebaseDisplayUpdate = currentTime;
       }
@@ -516,7 +542,8 @@ void loop()
     else if (correctedWeightData.quality == "stabilizing")
     {
       setColor(255, 165, 0); // Orange - stabilisasi
-      if (currentTime - lastFirebaseDisplayUpdate > 1000) { // Update every 1 second
+      if (currentTime - lastFirebaseDisplayUpdate > 1000)
+      { // Update every 1 second
         lcdShowQuality("Stabilizing");
         lastFirebaseDisplayUpdate = currentTime;
       }
@@ -532,7 +559,8 @@ void loop()
     else if (correctedWeightData.quality == "error")
     {
       setColor(255, 0, 0); // Merah - error
-      if (currentTime - lastFirebaseDisplayUpdate > 2000) { // Update every 2 seconds
+      if (currentTime - lastFirebaseDisplayUpdate > 2000)
+      { // Update every 2 seconds
         lcdShowQuality("Error");
         lastFirebaseDisplayUpdate = currentTime;
       }
@@ -549,18 +577,24 @@ void loop()
     {
       // Stable/standby mode - show quality status based on actual quality
       static unsigned long lastQualityUpdate = 0;
-      if (currentTime - lastQualityUpdate > 2000) { // Update every 2 seconds
+      if (currentTime - lastQualityUpdate > 2000)
+      {                      // Update every 2 seconds
         setColor(0, 255, 0); // Green - stable quality
-        
+
         // Show actual quality from sensor
-        if (correctedWeightData.quality == "stable") {
+        if (correctedWeightData.quality == "stable")
+        {
           lcdShowQuality("Stable");
-        } else if (correctedWeightData.quality == "good") {
+        }
+        else if (correctedWeightData.quality == "good")
+        {
           lcdShowQuality("Good");
-        } else {
+        }
+        else
+        {
           lcdShowQuality("Ready");
         }
-        
+
         webServer.setStabilizationStatus("standby", 0);
         lastQualityUpdate = currentTime;
       }
@@ -583,19 +617,22 @@ void loop()
     uint8_t enter = digitalRead(ENTER_BUTTON_PIN);
 
     // UP: tampilkan IP web di LCD selama 5 detik
-    if (lastUp == HIGH && up == LOW) {
+    if (lastUp == HIGH && up == LOW)
+    {
       String ip = webServer.getWebServerIP();
-      if (ip.length() == 0) {
+      if (ip.length() == 0)
+      {
         ip = WiFi.localIP().toString();
       }
       lcdShowIP(ip);
       Serial.println("[UI] Show IP: http://" + ip);
-  buzz(60);
-  lcdTempMessageUntil = millis() + IP_DISPLAY_DURATION_MS; // tahan sesuai konfigurasi
+      buzz(60);
+      lcdTempMessageUntil = millis() + IP_DISPLAY_DURATION_MS; // tahan sesuai konfigurasi
     }
 
     // DOWN: aktifkan base/alas/tatakan
-    if (lastDown == HIGH && down == LOW) {
+    if (lastDown == HIGH && down == LOW)
+    {
       webServer.setBaseMode(true);
       lcdClear();
       lcdShowStatus("Base Mode: ON");
@@ -606,7 +643,8 @@ void loop()
     }
 
     // ENTER: kembali ke mode normal (base OFF)
-    if (lastEnter == HIGH && enter == LOW) {
+    if (lastEnter == HIGH && enter == LOW)
+    {
       webServer.setBaseMode(false);
       lcdClear();
       lcdShowStatus("Normal Mode");
@@ -624,14 +662,14 @@ void loop()
   /////////////////////////
   // RFID Access Control (handled in handleRFIDAccess() above)
   // Access is already validated, system can proceed with weighing
-  
+
   // Get current authorized user
 #if BYPASS_RFID
   String currentUser = String(BYPASS_USER_NAME) + " (Bypass)";
 #else
   String currentUser = getCurrentAuthorizedUser();
 #endif
-  
+
   // Update web server with current user info
   webServer.setRFIDStatus(currentUser);
 
@@ -641,11 +679,13 @@ void loop()
   sendingActive = true;
 #else
   if (accessGranted && sessionManager.isSessionActive() && berat != "")
-  { 
+  {
     // Set sending active only when session is active
     sendingActive = sessionManager.isSessionActive();
     extendAccess(); // Extend access time when activity detected
-  } else {
+  }
+  else
+  {
     // Set sending inactive when no session
     sendingActive = false;
   }
@@ -713,19 +753,21 @@ void loop()
           Serial.println("[INFO] Angkat beban dari timbangan untuk melanjutkan...");
           Serial.println("[INFO] Ketik 'status' untuk melihat hasil kalibrasi");
           Serial.println("[INFO] Ketik 'test' untuk test akurasi");
-          
+
           // Reset stabilization state to prevent continuous sending
           lastStableState = false;
           sendingActive = false;
-          
+
           // Wait for weight to be removed
           delay(3000);
           lcdShowStatus("Angkat Beban");
-          
+
           // Wait until weight is removed (< 0.1 kg)
-          while (true) {
+          while (true)
+          {
             WeightData checkData = getAdvancedWeightData();
-            if (checkData.filtered < 0.1) {
+            if (checkData.filtered < 0.1)
+            {
               Serial.println("[INFO] Beban diangkat. Kalibrasi selesai!");
               lcdShowStatus("Siap Digunakan");
               break;
@@ -768,7 +810,8 @@ void loop()
       Serial.println("Final Weight: " + String(finalWeight, 3) + " kg");
       Serial.println("RFID Active: " + String(sendingActive ? "Yes" : "No"));
       Serial.println("Session Active: " + String(sessionManager.isSessionActive() ? "Yes" : "No"));
-      if (sessionManager.isSessionActive()) {
+      if (sessionManager.isSessionActive())
+      {
         Serial.println("Current User: " + sessionManager.getCurrentUserUID());
         Serial.println("Session Duration: " + String(sessionManager.getSessionDuration() / 1000) + " seconds");
       }
@@ -785,7 +828,7 @@ void loop()
       }
       Serial.println("=== TEST SELESAI ===");
     }
-  else if (cmd == "help")
+    else if (cmd == "help")
     {
       Serial.println("\n=== PERINTAH YANG TERSEDIA ===");
       Serial.println("kalibrasi <berat> - Kalibrasi dengan berat standar (contoh: kalibrasi 1.0)");
@@ -796,7 +839,7 @@ void loop()
       Serial.println("session           - Tampilkan status session saat ini");
       Serial.println("adduser <uid> <name> [email] - Tambah user RFID baru");
       Serial.println("refresh/sync      - Refresh cache RFID dari Firebase");
-  Serial.println("clear_uids        - Hapus semua UID RFID di EEPROM (paksa auto-enroll)");
+      Serial.println("clear_uids        - Hapus semua UID RFID di EEPROM (paksa auto-enroll)");
       Serial.println("help              - Tampilkan bantuan ini");
       Serial.println("\n=== TIPS KALIBRASI ===");
       Serial.println("1. Pastikan timbangan stabil dan tidak bergetar");
@@ -808,19 +851,20 @@ void loop()
     else if (cmd == "stop")
     {
 #if BYPASS_RFID
-  sendingActive = false;
-  lastStableState = false;
-  Serial.println("[SYSTEM] BYPASS: Pengiriman dihentikan sementara");
-  lcdShowStatus("Bypass: Stopped");
+      sendingActive = false;
+      lastStableState = false;
+      Serial.println("[SYSTEM] BYPASS: Pengiriman dihentikan sementara");
+      lcdShowStatus("Bypass: Stopped");
 #else
-  if (sessionManager.isSessionActive()) {
-    sessionManager.logout();
-  }
-  sendingActive = false;
-  lastStableState = false;
-  Serial.println("[SYSTEM] Pengiriman data ke Firebase dihentikan");
-  Serial.println("[INFO] Scan RFID untuk login kembali");
-  lcdShowStatus("Logged Out");
+      if (sessionManager.isSessionActive())
+      {
+        sessionManager.logout();
+      }
+      sendingActive = false;
+      lastStableState = false;
+      Serial.println("[SYSTEM] Pengiriman data ke Firebase dihentikan");
+      Serial.println("[INFO] Scan RFID untuk login kembali");
+      lcdShowStatus("Logged Out");
 #endif
     }
     else if (cmd == "session")
@@ -841,10 +885,13 @@ void loop()
       Serial.println("[SYSTEM] Bypass active: skipping RFID cache refresh");
 #else
       Serial.println("[SYSTEM] Refreshing RFID cache from Firebase...");
-      if (forceRefreshRFIDCache()) {
+      if (forceRefreshRFIDCache())
+      {
         Serial.println("[SYSTEM] RFID cache refreshed successfully!");
         Serial.println("[SYSTEM] Cached users: " + String(getCachedUsersCount()));
-      } else {
+      }
+      else
+      {
         Serial.println("[SYSTEM] Failed to refresh RFID cache!");
       }
 #endif
@@ -853,39 +900,54 @@ void loop()
     {
       // Format: adduser <uid> <name> [email]
       int firstSpace = cmd.indexOf(' ');
-      if (firstSpace > 0) {
+      if (firstSpace > 0)
+      {
         String params = cmd.substring(firstSpace + 1);
         int secondSpace = params.indexOf(' ');
-        
-        if (secondSpace > 0) {
+
+        if (secondSpace > 0)
+        {
           String uid = params.substring(0, secondSpace);
           String remaining = params.substring(secondSpace + 1);
           int thirdSpace = remaining.indexOf(' ');
-          
+
           String name, email;
-          if (thirdSpace > 0) {
+          if (thirdSpace > 0)
+          {
             name = remaining.substring(0, thirdSpace);
             email = remaining.substring(thirdSpace + 1);
-          } else {
+          }
+          else
+          {
             name = remaining;
             email = "";
           }
-          
-          if (uid.length() >= 6 && name.length() > 0) {
+
+          if (uid.length() >= 6 && name.length() > 0)
+          {
             Serial.println("[SYSTEM] Adding RFID user: " + uid + " - " + name);
-            if (addRFIDUser(uid, name, email)) {
+            if (addRFIDUser(uid, name, email))
+            {
               Serial.println("[SYSTEM] User added successfully!");
-            } else {
+            }
+            else
+            {
               Serial.println("[SYSTEM] Failed to add user!");
             }
-          } else {
+          }
+          else
+          {
             Serial.println("[ERROR] Invalid UID or name!");
           }
-        } else {
+        }
+        else
+        {
           Serial.println("[ERROR] Format: adduser <uid> <name> [email]");
           Serial.println("[INFO] Example: adduser 12CCB463 \"John Doe\" john@example.com");
         }
-      } else {
+      }
+      else
+      {
         Serial.println("[ERROR] Format: adduser <uid> <name> [email]");
         Serial.println("[INFO] Example: adduser 12CCB463 \"John Doe\" john@example.com");
       }

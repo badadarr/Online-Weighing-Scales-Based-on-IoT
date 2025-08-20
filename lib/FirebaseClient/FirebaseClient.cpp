@@ -1,4 +1,4 @@
-//File: src/FirebaseClient.cpp
+// File: src/FirebaseClient.cpp
 
 #if defined(ESP32) || defined(ARDUINO_RASPBERRY_PI_PICO_W)
 #include <WiFi.h>
@@ -13,22 +13,24 @@
 #endif
 
 // File: src/FirebaseClient.cpp
-#include <Arduino.h> // Include Arduino core library
+#include <Arduino.h>             // Include Arduino core library
 #include <Firebase_ESP_Client.h> // Include Firebase ESP Client library
-#include "FirebaseClient.h" // file: include/FirebaseClient.h
-#include "config.h" // file: include/config.h
-#include "lcd_display.h" // file: include/lcd_display.h
-#include "Indicator.h" // file: include/Indicator.h
-#include "pinManager.h" // file: include/pinManager.h
+#include "FirebaseClient.h"      // file: include/FirebaseClient.h
+#include "config.h"              // file: include/config.h
+#include "lcd_display.h"         // file: include/lcd_display.h
+#include "Indicator.h"           // file: include/Indicator.h
+#include "pinManager.h"          // file: include/pinManager.h
+#include "SessionManager.h"       // session state for operator uid
 
-FirebaseData fbdo; // Data object untuk Firebase
-FirebaseAuth auth; // Autentikasi firebase
+FirebaseData fbdo;     // Data object untuk Firebase
+FirebaseAuth auth;     // Autentikasi firebase
 FirebaseConfig config; // konfigurasi Firebase
 
 int firebaseFailCount = 0;
 const int MAX_FAILS_BEFORE_RESTART = 3;
 
-void setupFirebase() {
+void setupFirebase()
+{
   Serial.println("[Firebase] Inisialisasi...");
 
   // Sinkronisasi waktu NTP (penting untuk SSL)
@@ -38,17 +40,21 @@ void setupFirebase() {
   // Tunggu sinkronisasi waktu selesai (penting untuk SSL)
   int ntpRetries = 0;
   struct tm timeinfo;
-  while (!getLocalTime(&timeinfo) && ntpRetries < 10) {
+  while (!getLocalTime(&timeinfo) && ntpRetries < 10)
+  {
     Serial.println("[NTP] Menunggu sinkronisasi waktu...");
     lcdShowStatus("Sync NTP...");
-    yield(); // Feed watchdog during NTP sync
+    yield();    // Feed watchdog during NTP sync
     delay(500); // Reduced delay to prevent watchdog timeout
     ntpRetries++;
   }
-  
-  if (ntpRetries < 10) {
+
+  if (ntpRetries < 10)
+  {
     Serial.printf("[NTP] Waktu sekarang: %s", asctime(&timeinfo));
-  } else {
+  }
+  else
+  {
     Serial.println("[NTP] Gagal sinkronisasi waktu, melanjutkan...");
   }
 
@@ -64,12 +70,12 @@ void setupFirebase() {
   // Mulai koneksi Firebase
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
-  yield(); // Feed watchdog after Firebase begin
+  yield();    // Feed watchdog after Firebase begin
   delay(500); // Reduced delay to prevent watchdog timeout
 
-  fbdo.setResponseSize(1024); // Ukuran buffer untuk response JSON
-  fbdo.setBSSLBufferSize(1024, 512);   // Reduced SSL buffer to save memory
-  yield(); // Feed watchdog after buffer setup
+  fbdo.setResponseSize(1024);        // Ukuran buffer untuk response JSON
+  fbdo.setBSSLBufferSize(1024, 512); // Reduced SSL buffer to save memory
+  yield();                           // Feed watchdog after buffer setup
 
   // Cek memori heap
   Serial.printf("[Heap] Free heap: %d bytes\n", ESP.getFreeHeap());
@@ -80,19 +86,23 @@ void setupFirebase() {
 
   int authRetries = 0;
   const int MAX_AUTH_RETRIES = 3; // Reduced retries to prevent blocking
-  
-  while (!Firebase.ready() && authRetries < MAX_AUTH_RETRIES) {
+
+  while (!Firebase.ready() && authRetries < MAX_AUTH_RETRIES)
+  {
     Serial.print(".");
     lcdShowStatus("Auth Retry " + String(authRetries + 1));
-    yield(); // Feed watchdog during authentication
+    yield();     // Feed watchdog during authentication
     delay(1000); // Reduced delay
     authRetries++;
   }
 
-  if (Firebase.ready()) {
+  if (Firebase.ready())
+  {
     Serial.println("\n[Firebase] Autentikasi berhasil!");
     lcdShowQuality("Firebase OK");
-  } else {
+  }
+  else
+  {
     Serial.println("\n[Firebase] Autentikasi gagal setelah " + String(MAX_AUTH_RETRIES) + " percobaan");
     Serial.println("[Firebase] Alasan: " + fbdo.errorReason());
     lcdShowQuality("FB Offline");
@@ -102,15 +112,18 @@ void setupFirebase() {
   Serial.println("[Firebase] Siap kirim data.");
 }
 
-void sendBeratKeFirebase(const String& berat) {
+void sendBeratKeFirebase(const String &berat)
+{
   // Early exit if Firebase not ready to prevent blocking
-  if (!Firebase.ready()) {
+  if (!Firebase.ready())
+  {
     firebaseFailCount++;
     Serial.println("[Firebase] Token belum siap. Percobaan: " + String(firebaseFailCount));
     lcdShowQuality("Offline");
-    
+
     // Jangan restart, hanya log pesan error
-    if (firebaseFailCount >= MAX_FAILS_BEFORE_RESTART) {
+    if (firebaseFailCount >= MAX_FAILS_BEFORE_RESTART)
+    {
       Serial.println("[Firebase] Firebase offline, melanjutkan dalam mode lokal");
       firebaseFailCount = 0; // Reset counter untuk mencegah spam log
     }
@@ -118,80 +131,101 @@ void sendBeratKeFirebase(const String& berat) {
   }
 
   firebaseFailCount = 0;
-  
+
   // Struktur data yang lebih efisien
   FirebaseJson json;
   unsigned long timestamp = millis();
   String sessionId = String(timestamp);
-  
+
   // Data lengkap untuk session - minimal data to reduce SSL overhead
   json.set("weight", berat);
   json.set("timestamp", timestamp);
   json.set("device_id", DEVICE_ID);
-  
+  // Attach operator info if available (consumed by inventory web)
+  extern bool sendingActive; // true when session active
+  #include "SessionManager.h"
+  extern SessionManager sessionManager;
+  if (sendingActive && sessionManager.isSessionActive()) {
+    String uid = sessionManager.getCurrentUserUID();
+    if (uid.length() > 0) {
+      json.set("operator_uid", uid);
+    }
+  }
+
   // Update current status (real-time) - with frequency limit and timeout protection
   static unsigned long lastFirebaseUpdate = 0;
   unsigned long currentTime = millis();
-  
+
   // Limit Firebase updates to prevent SSL overload
-  if (currentTime - lastFirebaseUpdate < 5000) { // Minimum 5 seconds between updates
+  if (currentTime - lastFirebaseUpdate < 5000)
+  { // Minimum 5 seconds between updates
     return;
   }
-  
-  String currentPath = "/devices/" + String(DEVICE_ID) + "/current";
+
+  String currentPath = String("/devices/") + String(DEVICE_ID) + String("/current");
   fbdo.clear();
-  
+
   yield(); // Feed watchdog before Firebase operation
-  
-  if (Firebase.RTDB.setJSON(&fbdo, currentPath, &json)) {
-    Serial.println("[Firebase] Current data updated: " + berat);
+
+  if (Firebase.RTDB.setJSON(&fbdo, currentPath, &json))
+  {
+  Serial.println(String("[Firebase] Current data updated: ") + String(berat));
     lastFirebaseUpdate = currentTime;
     lcdShowQuality("Sent OK");
     setColor(0, 255, 0);
-  } else {
-    Serial.println("[Firebase] Failed: " + fbdo.errorReason());
+  }
+  else
+  {
+  Serial.println(String("[Firebase] Failed: ") + fbdo.errorReason());
     lcdShowQuality("Error");
     setColor(255, 0, 0);
     return;
   }
-  
+
   yield(); // Feed watchdog after Firebase operation
-  
+
   // Simpan ke history dengan auto-cleanup (hanya 50 data terakhir)
-  String historyPath = "/devices/" + String(DEVICE_ID) + "/history/" + sessionId;
+  String historyPath = String("/devices/") + String(DEVICE_ID) + String("/history/") + sessionId;
   fbdo.clear();
   Firebase.RTDB.setJSON(&fbdo, historyPath, &json);
-  
+
   // Auto-cleanup: hapus data lama (opsional)
   static unsigned long lastCleanup = 0;
-  if (millis() - lastCleanup > 300000) { // Cleanup setiap 5 menit
+  if (millis() - lastCleanup > 300000)
+  { // Cleanup setiap 5 menit
     cleanupOldData();
     lastCleanup = millis();
   }
 }
 
-void cleanupOldData() {
+void cleanupOldData()
+{
   String historyPath = "/devices/" + String(DEVICE_ID) + "/history";
   fbdo.clear();
-  if (Firebase.RTDB.getJSON(&fbdo, historyPath)) {
+  if (Firebase.RTDB.getJSON(&fbdo, historyPath))
+  {
     FirebaseJson json = fbdo.jsonObject();
     size_t count = json.iteratorBegin();
-    if (count > 50) {
+    if (count > 50)
+    {
       String oldestKey;
       unsigned long oldestTime = ULONG_MAX;
-      
-      for (size_t i = 0; i < count; i++) {
+
+      for (size_t i = 0; i < count; i++)
+      {
         int type;
         String key, value;
         json.iteratorGet(i, type, key, value);
         unsigned long time = key.toInt();
-        if (time < oldestTime) {
+        if (time < oldestTime)
+        {
           oldestTime = time;
           oldestKey = key;
         }
       }
-      
-      if (oldestKey.length() > 0) {
+
+      if (oldestKey.length() > 0)
+      {
         Firebase.RTDB.deleteNode(&fbdo, historyPath + "/" + oldestKey);
         Serial.println("[Firebase] Cleaned: " + oldestKey);
       }

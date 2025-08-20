@@ -12,8 +12,8 @@ float FaktorKalibrasi = DEFAULT_FAKTOR_KALIBRASI; // Faktor kalibrasi default
 
 // Advanced filtering variables
 #define WEIGHT_BUFFER_SIZE 10
-#define STABILITY_THRESHOLD 0.05  // 50 grams threshold for stability
-#define MOTION_THRESHOLD 0.1      // 100 grams threshold for motion detection
+#define STABILITY_THRESHOLD 0.05   // 50 grams threshold for stability
+#define MOTION_THRESHOLD 0.1       // 100 grams threshold for motion detection
 #define STABILITY_COUNT_REQUIRED 5 // Number of stable readings required
 
 float weightBuffer[WEIGHT_BUFFER_SIZE];
@@ -25,24 +25,32 @@ unsigned long lastWeightUpdate = 0;
 bool motionDetected = false;
 
 // Fungsi inisialisasi sensor (tetap dipakai)
-void setupSensor() {
+void setupSensor()
+{
     pinMode(TARE_BUTTON_PIN, INPUT_PULLUP);
     scale.begin(HX711_DATA_PIN, HX711_CLOCK_PIN);
     scale.set_scale(DEFAULT_FAKTOR_KALIBRASI);
     scale.tare();
-    //lcdShowStatus("Inis Sensor...");
+    // lcdShowStatus("Inis Sensor...");
 }
 
 // Fungsi baca berat (tetap dipakai)
-String readWeight() {
-    if (scale.is_ready()) {
+String readWeight()
+{
+    if (scale.is_ready())
+    {
         float berat = scale.get_units(WEIGHT_SAMPLES);
         // filter nilai minus atau terlalu kecil
-        if (berat < 0 || abs(berat) < 0.02f) { // Ganti 2.0f jadi 0.02f (20 gram)
-          berat = 0.0f;
-        } else if (berat > 10000) {
-          berat = 10000;
-        }else if(berat > 0){
+        if (berat < 0 || abs(berat) < 0.02f)
+        { // Ganti 2.0f jadi 0.02f (20 gram)
+            berat = 0.0f;
+        }
+        else if (berat > 10000)
+        {
+            berat = 10000;
+        }
+        else if (berat > 0)
+        {
             buzz(10); // Bunyi buzzer jika berat valid
         }
 
@@ -54,9 +62,11 @@ String readWeight() {
 }
 
 // Fungsi tambahan: update tombol tare
-void updateTareButton() {
+void updateTareButton()
+{
     bool tareButtonState = digitalRead(TARE_BUTTON_PIN);
-    if (lastTareButtonState == HIGH && tareButtonState == LOW) {
+    if (lastTareButtonState == HIGH && tareButtonState == LOW)
+    {
         Serial.println("[SCALE] Tombol tare ditekan.");
         performTare(); // Use the new advanced tare function
         delay(2000);
@@ -66,56 +76,63 @@ void updateTareButton() {
 
 // Implementasi class Scale
 
-void Kalibrasi(float knownWeight) {
-    if (knownWeight == 0) {
+void Kalibrasi(float knownWeight)
+{
+    if (knownWeight == 0)
+    {
         Serial.println("[SCALE] Error: Berat standar tidak boleh nol!");
         return;
     }
-    
+
     Serial.println("[SCALE] Mulai kalibrasi...");
-    buzz(100); // Bunyi buzzer sebagai tanda mulai kalibrasi 
-    
+    buzz(100); // Bunyi buzzer sebagai tanda mulai kalibrasi
+
     // Reset scale and tare
     scale.set_scale();
     performTare(); // Use advanced tare function
     delay(1000);
-    
+
     Serial.println("[SCALE] Letakkan beban standar di atas timbangan.");
     Serial.print("[SCALE] Berat standar: ");
     Serial.print(knownWeight);
     Serial.println(" kg");
-    
+
     // Wait for stable reading
     delay(3000); // Give time to place weight
-    
+
     // Take multiple readings for better accuracy
     float totalReading = 0;
     int validReadings = 0;
-    
-    for (int i = 0; i < 20; i++) {
-        if (scale.is_ready()) {
+
+    for (int i = 0; i < 20; i++)
+    {
+        if (scale.is_ready())
+        {
             float reading = scale.get_units(1);
-            if (abs(reading) > 0.01) { // Valid reading
+            if (abs(reading) > 0.01)
+            { // Valid reading
                 totalReading += reading;
                 validReadings++;
             }
         }
         delay(100);
     }
-    
-    if (validReadings < 10) {
+
+    if (validReadings < 10)
+    {
         buzz(200); // Error buzz
         Serial.println("[SCALE] Error: Tidak cukup pembacaan valid untuk kalibrasi!");
         return;
     }
-    
+
     float averageReading = totalReading / validReadings;
     Serial.print("[SCALE] Pembacaan rata-rata dari ");
     Serial.print(validReadings);
     Serial.print(" sampel: ");
     Serial.println(averageReading);
 
-    if (abs(averageReading) < 0.01) {
+    if (abs(averageReading) < 0.01)
+    {
         buzz(200); // Error buzz
         Serial.println("[SCALE] Error: Pembacaan terlalu kecil, kalibrasi gagal!");
         return;
@@ -132,11 +149,12 @@ void Kalibrasi(float knownWeight) {
     Serial.print("[SCALE] Test pembacaan setelah kalibrasi: ");
     Serial.print(testReading, 3);
     Serial.println(" kg");
-    
+
     float error = abs(testReading - knownWeight);
     float errorPercent = (error / knownWeight) * 100;
-    
-    if (errorPercent < 5.0) { // Less than 5% error
+
+    if (errorPercent < 5.0)
+    { // Less than 5% error
         // Simpan ke EEPROM jika berhasil
         saveCalibrationToEEPROM(getFaktorKalibrasi());
         buzz(100); // Success buzz
@@ -144,14 +162,15 @@ void Kalibrasi(float knownWeight) {
         Serial.print(errorPercent, 2);
         Serial.println("%");
         Serial.println("[SCALE] Faktor kalibrasi disimpan ke EEPROM.");
-        
+
         // Reset filtering after calibration
         bufferIndex = 0;
         bufferFilled = false;
         stableCount = 0;
         lastStableWeight = 0.0;
-        
-    } else {
+    }
+    else
+    {
         buzz(300); // Warning buzz
         Serial.print("[SCALE] Peringatan: Error kalibrasi tinggi (");
         Serial.print(errorPercent, 2);
@@ -159,168 +178,209 @@ void Kalibrasi(float knownWeight) {
     }
 }
 
-
-
-float getFaktorKalibrasi() {
+float getFaktorKalibrasi()
+{
     return FaktorKalibrasi;
 }
 
-void setFaktorKalibrasi(float factor) {
+void setFaktorKalibrasi(float factor)
+{
     FaktorKalibrasi = factor;
     scale.set_scale(FaktorKalibrasi);
 }
 
 // Advanced weight filtering functions
-void updateWeightBuffer(float newWeight) {
+void updateWeightBuffer(float newWeight)
+{
     weightBuffer[bufferIndex] = newWeight;
     bufferIndex = (bufferIndex + 1) % WEIGHT_BUFFER_SIZE;
-    if (!bufferFilled && bufferIndex == 0) {
+    if (!bufferFilled && bufferIndex == 0)
+    {
         bufferFilled = true;
     }
 }
 
-float calculateMovingAverage() {
-    if (!bufferFilled && bufferIndex == 0) return 0.0;
-    
+float calculateMovingAverage()
+{
+    if (!bufferFilled && bufferIndex == 0)
+        return 0.0;
+
     float sum = 0.0;
     int count = bufferFilled ? WEIGHT_BUFFER_SIZE : bufferIndex;
-    
-    for (int i = 0; i < count; i++) {
+
+    for (int i = 0; i < count; i++)
+    {
         sum += weightBuffer[i];
     }
-    
+
     return sum / count;
 }
 
-float calculateMedianFilter() {
-    if (!bufferFilled && bufferIndex < 3) return 0.0;
-    
+float calculateMedianFilter()
+{
+    if (!bufferFilled && bufferIndex < 3)
+        return 0.0;
+
     int count = bufferFilled ? WEIGHT_BUFFER_SIZE : bufferIndex;
     float tempBuffer[WEIGHT_BUFFER_SIZE];
-    
+
     // Copy buffer for sorting
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++)
+    {
         tempBuffer[i] = weightBuffer[i];
     }
-    
+
     // Simple bubble sort
-    for (int i = 0; i < count - 1; i++) {
-        for (int j = 0; j < count - i - 1; j++) {
-            if (tempBuffer[j] > tempBuffer[j + 1]) {
+    for (int i = 0; i < count - 1; i++)
+    {
+        for (int j = 0; j < count - i - 1; j++)
+        {
+            if (tempBuffer[j] > tempBuffer[j + 1])
+            {
                 float temp = tempBuffer[j];
                 tempBuffer[j] = tempBuffer[j + 1];
                 tempBuffer[j + 1] = temp;
             }
         }
     }
-    
+
     // Return median
-    if (count % 2 == 0) {
-        return (tempBuffer[count/2 - 1] + tempBuffer[count/2]) / 2.0;
-    } else {
-        return tempBuffer[count/2];
+    if (count % 2 == 0)
+    {
+        return (tempBuffer[count / 2 - 1] + tempBuffer[count / 2]) / 2.0;
+    }
+    else
+    {
+        return tempBuffer[count / 2];
     }
 }
 
-bool detectMotion(float currentWeight) {
+bool detectMotion(float currentWeight)
+{
     static float lastWeight = 0.0;
     static unsigned long lastMotionTime = 0;
-    
+
     float weightDiff = abs(currentWeight - lastWeight);
     bool hasMotion = weightDiff > MOTION_THRESHOLD;
-    
-    if (hasMotion) {
+
+    if (hasMotion)
+    {
         lastMotionTime = millis();
         motionDetected = true;
-    } else if (millis() - lastMotionTime > 2000) { // 2 seconds of no motion
+    }
+    else if (millis() - lastMotionTime > 2000)
+    { // 2 seconds of no motion
         motionDetected = false;
     }
-    
+
     lastWeight = currentWeight;
     return motionDetected;
 }
 
-bool isWeightStable() {
-    if (!bufferFilled && bufferIndex < STABILITY_COUNT_REQUIRED) return false;
-    
+bool isWeightStable()
+{
+    if (!bufferFilled && bufferIndex < STABILITY_COUNT_REQUIRED)
+        return false;
+
     float filtered = calculateMedianFilter();
     float diff = abs(filtered - lastStableWeight);
-    
-    if (diff < STABILITY_THRESHOLD) {
+
+    if (diff < STABILITY_THRESHOLD)
+    {
         stableCount++;
-        if (stableCount >= STABILITY_COUNT_REQUIRED) {
+        if (stableCount >= STABILITY_COUNT_REQUIRED)
+        {
             return true;
         }
-    } else {
+    }
+    else
+    {
         stableCount = 0;
         lastStableWeight = filtered;
     }
-    
+
     return false;
 }
 
-float getFilteredWeight() {
+float getFilteredWeight()
+{
     float median = calculateMedianFilter();
     float average = calculateMovingAverage();
-    
+
     // Use median for better noise rejection, but fallback to average if needed
     return abs(median - average) < 0.1 ? median : average;
 }
 
-String getWeightQuality() {
+String getWeightQuality()
+{
     bool stable = isWeightStable();
     bool motion = motionDetected;
-    
-    if (motion) {
+
+    if (motion)
+    {
         return "motion";
-    } else if (stable) {
+    }
+    else if (stable)
+    {
         return "stable";
-    } else {
+    }
+    else
+    {
         return "stabilizing";
     }
 }
 
-WeightData getAdvancedWeightData() {
+WeightData getAdvancedWeightData()
+{
     WeightData data;
-    
-    if (scale.is_ready()) {
+
+    if (scale.is_ready())
+    {
         // Get raw reading
         data.raw = scale.get_units(1);
-        
+
         // Update buffer with raw data
         updateWeightBuffer(data.raw);
-        
+
         // Calculate filtered weight
         data.filtered = getFilteredWeight();
-        
+
         // Apply basic filtering for negative/small values
-        if (data.filtered < 0 || abs(data.filtered) < 0.02f) {
+        if (data.filtered < 0 || abs(data.filtered) < 0.02f)
+        {
             data.filtered = 0.0f;
-        } else if (data.filtered > 10000) {
+        }
+        else if (data.filtered > 10000)
+        {
             data.filtered = 10000;
         }
-        
+
         // Detect motion and stability
         data.hasMotion = detectMotion(data.filtered);
         data.isStable = isWeightStable();
         data.quality = getWeightQuality();
-        
+
         // Set stable weight (use filtered if stable, otherwise last stable value)
-        if (data.isStable) {
+        if (data.isStable)
+        {
             data.stable = data.filtered;
             lastStableWeight = data.stable;
-        } else {
+        }
+        else
+        {
             data.stable = lastStableWeight;
         }
-        
+
         data.lastUpdate = millis();
-        
+
         // Buzzer for valid weight detection
-        if (data.filtered > 0 && data.isStable) {
+        if (data.filtered > 0 && data.isStable)
+        {
             buzz(10);
         }
-        
-    } else {
+    }
+    else
+    {
         // Scale not ready
         data.raw = 0;
         data.filtered = 0;
@@ -330,21 +390,22 @@ WeightData getAdvancedWeightData() {
         data.quality = "error";
         data.lastUpdate = millis();
     }
-    
+
     return data;
 }
 
-void performTare() {
+void performTare()
+{
     Serial.println("[SCALE] Performing tare operation...");
     scale.tare();
-    
+
     // Reset filtering variables
     bufferIndex = 0;
     bufferFilled = false;
     stableCount = 0;
     lastStableWeight = 0.0;
     motionDetected = false;
-    
+
     Serial.println("[SCALE] Tare completed and filters reset.");
     lcdShowTare("Tare Selesai..");
     buzz(100);

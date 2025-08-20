@@ -265,6 +265,39 @@
         background-color: #fff3cd;
         color: #856404;
       }
+      .modal {
+        display: none; /* Hidden by default */
+        position: fixed; /* Stay in place */
+        z-index: 1000; /* Sit on top */
+        left: 0;
+        top: 0;
+        width: 100%; /* Full width */
+        height: 100%; /* Full height */
+        overflow: auto; /* Enable scroll if needed */
+        background-color: rgba(0, 0, 0, 0.4); /* Black w/ opacity */
+      }
+      .modal-content {
+        background-color: #fefefe;
+        margin: 15% auto;
+        padding: 20px;
+        border: 1px solid #888;
+        width: 80%;
+        max-width: 500px;
+        border-radius: 8px;
+        position: relative;
+      }
+      .close-button {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+      }
+      .close-button:hover,
+      .close-button:focus {
+        color: black;
+        text-decoration: none;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -461,12 +494,6 @@
           </div>
 
           <div class="section section-soft">
-            <h3>Pending Requests</h3>
-            <div id="pendingRequests">Memuat permintaan...</div>
-            <button type="button" class="btn" onclick="loadPendingRequests()">Refresh Pending</button>
-          </div>
-
-          <div class="section section-soft">
             <h3>Quick Label untuk Kartu Baru</h3>
             <div class="form-group">
               <label for="quickUID">UID Terakhir:</label>
@@ -511,6 +538,11 @@
           <div id="response" class="response hidden"></div>
 
           <div class="user-list">
+            <h3>Permintaan Tertunda</h3>
+            <div id="pendingList" class="user-grid">Memuat permintaan...</div>
+          </div>
+
+          <div class="user-list">
             <h3>Pengguna Terdaftar</h3>
             <div id="userList" class="users">Memuat pengguna...</div>
             <button type="button" class="btn" onclick="syncRFIDData()">
@@ -534,8 +566,8 @@
         // Load configuration data
         loadSystemConfig();
         loadWiFiConfig();
-  loadUsers();
-  loadPendingRequests();
+        loadUsers();
+        loadPendingRequests();
         refreshRFIDStatus();
       });
 
@@ -884,65 +916,6 @@
           });
       }
 
-      function loadPendingRequests() {
-        const el = document.getElementById("pendingRequests");
-        if (!el) return;
-        el.textContent = "Memuat permintaan...";
-        fetch("/api/rfid/requests")
-          .then((r) => r.json())
-          .then((d) => {
-            if (!d.success) throw new Error(d.message || "Gagal memuat");
-            const reqs = Array.isArray(d.requests) ? d.requests : [];
-            if (reqs.length === 0) {
-              el.innerHTML = '<div class="user-item">Tidak ada permintaan pending</div>';
-              return;
-            }
-            let html = '<div class="user-grid">';
-            reqs.forEach((r, i) => {
-              html += `
-              <div class="user-card">
-                <div class="header">
-                  <div class="title">Request ${i + 1}: ${escapeHtml(
-                    (r.uid||'').toString()
-                  )}</div>
-                  <span class="chip">PENDING</span>
-                </div>
-                <div class="field"><label>Device ID:</label><span>${escapeHtml((r.device_id||'-').toString())}</span></div>
-                <div class="field"><label>Requested At:</label><span>${escapeHtml((r.request_time||'-').toString())}</span></div>
-                <div class="field"><label>Nama:</label><span>${escapeHtml(r.name||'-')}</span></div>
-                <div class="field"><label>Email:</label><span>${escapeHtml(r.email||'-')}</span></div>
-                <div class="field"><button class="btn btn-success" onclick="approveRequest('${'${'}r.uid||''${'}'}')">Approve</button>
-                <button class="btn btn-danger" onclick="rejectRequest('${'${'}r.uid||''${'}'}')">Reject</button></div>
-              </div>`;
-            });
-            html += '</div>';
-            el.innerHTML = html;
-          })
-          .catch((e) => {
-            console.error(e);
-            el.innerHTML = '<div class="user-item">Kesalahan memuat pending requests</div>';
-          });
-      }
-
-      function approveRequest(uid) {
-        uid = (uid||'').toString(); if(!uid) return;
-        const name = prompt('Nama (opsional, default = UID):', '');
-        const email = prompt('Email (opsional):', '');
-        fetch('/api/rfid/requests/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({uid, name, email}) })
-          .then(r=>r.json())
-          .then(d=>{ if(d.success){ loadPendingRequests(); loadUsers(); showResponse('UID '+uid+' disetujui', 'success'); } else { showResponse(d.message||'Gagal approve', 'error'); } })
-          .catch(e=>{ console.error(e); showResponse('Kesalahan jaringan', 'error'); });
-      }
-
-      function rejectRequest(uid) {
-        uid = (uid||'').toString(); if(!uid) return;
-        if(!confirm('Tolak UID '+uid+'?')) return;
-        fetch('/api/rfid/requests/reject', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({uid}) })
-          .then(r=>r.json())
-          .then(d=>{ if(d.success){ loadPendingRequests(); showResponse('Permintaan ditolak', 'success'); } else { showResponse(d.message||'Gagal reject', 'error'); } })
-          .catch(e=>{ console.error(e); showResponse('Kesalahan jaringan', 'error'); });
-      }
-
       function refreshRFIDStatus() {
         fetch("/api/rfid/status")
           .then((r) => r.json())
@@ -1058,19 +1031,165 @@
           });
       }
 
+      function loadPendingRequests() {
+        const pendingListDiv = document.getElementById("pendingList");
+        if (!pendingListDiv) return;
+        pendingListDiv.innerHTML =
+          '<div class="user-item">Memuat permintaan...</div>';
+        fetch("/api/rfid/requests")
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success && data.requests) {
+              displayPendingRequests(data.requests);
+            } else {
+              pendingListDiv.innerHTML =
+                '<div class="user-item">Tidak ada permintaan tertunda.</div>';
+            }
+          })
+          .catch((error) => {
+            console.error("Error loading pending requests:", error);
+            pendingListDiv.innerHTML =
+              '<div class="user-item">Gagal memuat permintaan.</div>';
+          });
+      }
+
+      function displayPendingRequests(requests) {
+        const pendingListDiv = document.getElementById("pendingList");
+        if (!pendingListDiv) return;
+
+        const uidRegex = /^[0-9A-F]{6,12}$/i;
+        const list = [];
+
+        if (Array.isArray(requests)) {
+          // Server returns an array: [{uid, device_id, request_time, ...}]
+          for (const r of requests) {
+            if (!r || typeof r !== "object") continue;
+            const uid = (r.uid || "").toString();
+            if (uid && uidRegex.test(uid)) {
+              list.push({
+                uid,
+                device_id: r.device_id || r["Device ID"] || "N/A",
+                request_time: r.request_time || r["Requested At"] || "-",
+              });
+            }
+          }
+        } else if (requests && typeof requests === "object") {
+          // Map keyed by UID
+          for (const [uid, obj] of Object.entries(requests)) {
+            if (uidRegex.test(uid) && obj && typeof obj === "object") {
+              list.push({
+                uid,
+                device_id: obj.device_id || obj["Device ID"] || "N/A",
+                request_time: obj.request_time || obj["Requested At"] || "-",
+              });
+            }
+          }
+        }
+
+        if (list.length === 0) {
+          pendingListDiv.innerHTML =
+            '<div class="user-item">Tidak ada permintaan tertunda.</div>';
+          return;
+        }
+
+        let html = "";
+        list.forEach((item, index) => {
+          const requestedAt = formatCreatedAt(item.request_time);
+          html += `
+            <div class="user-card">
+              <div class="header">
+                <div class="title">Request ${index + 1}: ${escapeHtml(
+            item.uid
+          )}</div>
+                <span class="chip">PENDING</span>
+              </div>
+              <div class="field"><label>Device ID:</label><span>${escapeHtml(
+                (item.device_id || "N/A").toString()
+              )}</span></div>
+              <div class="field"><label>Requested At:</label><span>${requestedAt}</span></div>
+              <button class="btn btn-success" style="margin-top: 8px;" onclick="openModal('${escapeHtml(
+                item.uid
+              )}')">Setujui</button>
+            </div>`;
+        });
+        pendingListDiv.innerHTML = html;
+      }
+
+      function openModal(uid) {
+        document.getElementById("approvalUid").value = uid;
+        document.getElementById("approvalModal").style.display = "block";
+        document.getElementById("approvalName").focus();
+      }
+
+      function closeModal() {
+        document.getElementById("approvalModal").style.display = "none";
+        document.getElementById("approvalForm").reset();
+      }
+
+      function approveRequest(event) {
+        event.preventDefault();
+        const uid = document.getElementById("approvalUid").value;
+        const name = document.getElementById("approvalName").value;
+        const email = document.getElementById("approvalEmail").value;
+        const payload = { uid, name, email };
+
+        fetch("/api/rfid/requests/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              showResponse("Pengguna berhasil disetujui!", "success");
+              closeModal();
+              loadUsers();
+              loadPendingRequests();
+            } else {
+              showResponse(
+                "Gagal menyetujui pengguna: " +
+                  (data.message || "Error tidak diketahui"),
+                "error"
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Error approving request:", error);
+            showResponse("Kesalahan jaringan saat menyetujui.", "error");
+          });
+      }
+
+      window.onclick = function (event) {
+        const modal = document.getElementById("approvalModal");
+        if (event.target == modal) {
+          closeModal();
+        }
+      };
+
       function displayUsers(users) {
         const userListDiv = document.getElementById("userList");
         if (!userListDiv) return;
 
-        let list = [];
         const uidRegex = /^[0-9A-F]{6,12}$/i;
+        const list = [];
 
-        // Helper to normalize one user object
+        // Normalize one user record (support lower/upper keys)
         const normUser = (obj, keyFallback = "") => ({
           uid: (obj?.uid || obj?.UID || keyFallback || "").toString(),
           name: obj?.name || obj?.Name || "",
           email: obj?.email || obj?.Email || "",
-          active: obj?.active !== undefined ? obj.active : obj?.Active,
+          active:
+            obj?.active !== undefined
+              ? obj.active
+              : obj?.Active !== undefined
+              ? obj.Active
+              : true,
+          created_at:
+            obj?.created_at !== undefined
+              ? obj.created_at
+              : obj?.["Created At"],
+          device_id:
+            obj?.device_id !== undefined ? obj.device_id : obj?.["Device ID"],
         });
 
         if (Array.isArray(users)) {
@@ -1083,9 +1202,9 @@
           }
         } else if (users && typeof users === "object") {
           // Map keyed by UID
-          for (const [uid, userObject] of Object.entries(users)) {
-            if (uidRegex.test(uid) && userObject && typeof userObject === "object") {
-              list.push(normUser(userObject, uid));
+          for (const [uid, obj] of Object.entries(users)) {
+            if (uidRegex.test(uid) && obj && typeof obj === "object") {
+              list.push(normUser(obj, uid));
             }
           }
         }
@@ -1105,6 +1224,7 @@
         let html = '<div class="user-grid">';
         list.forEach((user, idx) => {
           const active = user.active === true;
+          const createdAtStr = formatCreatedAt(user.created_at);
           const uid = user.uid || "-";
 
           html += `
@@ -1120,6 +1240,7 @@
               <div class="field"><label>Active:</label><span>${
                 active ? "Yes" : "No"
               }</span></div>
+              <div class="field"><label>Created At:</label><span>${createdAtStr}</span></div>
               <div class="field"><label>Device ID:</label><span>${escapeHtml(
                 (user.device_id || "-").toString()
               )}</span></div>
@@ -1443,5 +1564,35 @@
         }
       }
     </script>
+    <!-- Approval Modal -->
+    <div id="approvalModal" class="modal">
+      <div class="modal-content">
+        <span class="close-button" onclick="closeModal()">×</span>
+        <h3>Setujui Pengguna</h3>
+        <form id="approvalForm" onsubmit="approveRequest(event)">
+          <input type="hidden" id="approvalUid" />
+          <div class="form-group">
+            <label for="approvalName">Nama:</label>
+            <input
+              type="text"
+              id="approvalName"
+              placeholder="Masukkan nama lengkap"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="approvalEmail">Email (opsional):</label>
+            <input
+              type="email"
+              id="approvalEmail"
+              placeholder="Masukkan alamat email"
+            />
+          </div>
+          <button type="submit" class="btn btn-success">
+            Setujui & Tambahkan
+          </button>
+        </form>
+      </div>
+    </div>
   </body>
 </html>

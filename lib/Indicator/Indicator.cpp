@@ -1,7 +1,8 @@
 #include "Indicator.h"
 #include "pinManager.h"
 
-void setupIndicators() {
+void setupIndicators()
+{
   pinMode(LED_PIN_R, OUTPUT);
   pinMode(LED_PIN_G, OUTPUT);
   pinMode(LED_PIN_B, OUTPUT);
@@ -11,19 +12,22 @@ void setupIndicators() {
   Serial.println("[INDICATOR] Inisialisasi indikator LED dan buzzer...");
 }
 
-void setColor(uint8_t r, uint8_t g, uint8_t b) { // Set warna LED RGB
+void setColor(uint8_t r, uint8_t g, uint8_t b)
+{ // Set warna LED RGB
   analogWrite(LED_PIN_R, 255 - r);
   analogWrite(LED_PIN_G, 255 - g);
   analogWrite(LED_PIN_B, 255 - b);
 }
 
-void buzz(int duration) { // Fungsi untuk mengaktifkan buzzer
+void buzz(int duration)
+{ // Fungsi untuk mengaktifkan buzzer
   digitalWrite(BUZZER_PIN, HIGH);
   delay(duration);
   digitalWrite(BUZZER_PIN, LOW);
 }
 
-void LEDBuzz(int duration) { // Fungsi untuk mengaktifkan buzzer
+void LEDBuzz(int duration)
+{                      // Fungsi untuk mengaktifkan buzzer
   setColor(255, 0, 0); // Merah
   delay(duration);
   setColor(0, 255, 0); // Matikan LED
@@ -32,12 +36,14 @@ void LEDBuzz(int duration) { // Fungsi untuk mengaktifkan buzzer
   delay(duration);
 }
 
-int ulangiBuzzer() {
+int ulangiBuzzer()
+{
   int i;
-  for (i = 0; i < 5; i++) {
-    LEDBuzz(50);  // LED dan buzzer menyala sebagai tanda siap
-    buzz(50);     // Bunyi buzzer sebagai tanda siap
-    delay(200);   // Jeda antar iterasi
+  for (i = 0; i < 5; i++)
+  {
+    LEDBuzz(50); // LED dan buzzer menyala sebagai tanda siap
+    buzz(50);    // Bunyi buzzer sebagai tanda siap
+    delay(200);  // Jeda antar iterasi
   }
-  return i;       // Mengembalikan jumlah pengulangan (5)
+  return i; // Mengembalikan jumlah pengulangan (5)
 }

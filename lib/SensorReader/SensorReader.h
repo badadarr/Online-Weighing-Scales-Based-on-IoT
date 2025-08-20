@@ -1,20 +1,13 @@
 #pragma once
 #include <Arduino.h>
 #include <HX711.h>
+#include "types.h"
 
 /**
  * @brief Struktur data untuk menyimpan informasi berat timbangan
  * @details Berisi data mentah, terfilter, status stabilitas, dan kualitas pembacaan
  */
-struct WeightData {
-  float raw;                    // Data mentah dari HX711 (tanpa filter)
-  float filtered;               // Data setelah filtering (moving average + median)
-  float stable;                 // Data stabil terakhir yang valid
-  bool isStable;                // Status apakah pembacaan sudah stabil
-  bool hasMotion;               // Deteksi gerakan/perubahan berat
-  String quality;               // Kualitas pembacaan: "stable", "motion", "error"
-  unsigned long lastUpdate;     // Timestamp update terakhir
-};
+// WeightData now comes from include/types.h
 
 /**
  * @brief Inisialisasi sensor HX711 dan konfigurasi pin
